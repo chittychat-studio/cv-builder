@@ -1811,7 +1811,14 @@ function render(){
   const projs = S.projects.filter(p=>p.title||p.desc);
   const quant = v("f_quant");
   if(projs.length||quant){
-    let s = `<h3 class="cv-sec">${esc(step3Copy().cvSection)}</h3>`;
+    // The CV heading is deliberately the plain, parser-recognised word, not the
+    // role-flavoured one. step3Copy().cvSection ("Projects & Quantitative
+    // Evidence", "Creative Projects", …) still drives the FORM copy, where it
+    // tells the student what belongs in the step — but on the CV itself an
+    // uncommon heading is a parsing risk, and the app's own health check was
+    // flagging a heading the student had no way to change. The AI prompt
+    // already requires standard headings; this keeps the form version in step.
+    let s = `<h3 class="cv-sec">Projects</h3>`;
     projs.forEach(p=>{
       s += `<div class="cv-entry"><div class="cv-entry-head"><b>${esc(p.title)}</b></div><ul>`;
       bulletify(p.desc).forEach(b=> s += `<li>${esc(b)}</li>`);
@@ -1827,7 +1834,8 @@ function render(){
   const jobs = S.jobs.filter(j=>j.role||j.org);
   const resp = v("f_responsibility");
   if(jobs.length||resp){
-    let s = `<h3 class="cv-sec">Experience &amp; Responsibility</h3>`;
+    // "Work Experience" is the heading parsers and recruiters both expect.
+    let s = `<h3 class="cv-sec">Work Experience</h3>`;
     jobs.forEach(j=>{
       s += `<div class="cv-entry"><div class="cv-entry-head"><b>${esc(j.role)}${j.org?", "+esc(j.org):""}</b><span class="dates">${esc(j.dates)}</span></div>`;
       const bs = bulletify(j.desc);
@@ -1848,7 +1856,7 @@ function render(){
   /* Interests — always the final section: UK convention puts them last. */
   const fb=v("f_football"), fit=v("f_fitness"), aw=v("f_awards"), oi=v("f_interests");
   if(fb||fit||aw||oi){
-    let s = `<h3 class="cv-sec">Interests &amp; Achievements</h3><ul>`;
+    let s = `<h3 class="cv-sec">Interests</h3><ul>`;
     if(fb) s += bulletify(fb).map(b=>`<li>${esc(b)}</li>`).join("");
     if(fit) s += bulletify(fit).map(b=>`<li>${esc(b)}</li>`).join("");
     if(aw) s += bulletify(aw).map(b=>`<li>${esc(b)}</li>`).join("");
