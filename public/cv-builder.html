@@ -561,6 +561,13 @@
   .ai-msg{font-size:.84rem; color:var(--ink-soft); margin-top:6px;}
   .ai-msg.err{color:var(--danger);}
   #actionsPanel h2{color:var(--ok);}
+  #gapsPanel h2{color:#9a5b00;}
+  .gap-tag{
+    display:inline-block; font-size:.72rem; font-weight:700; border-radius:5px;
+    padding:1px 7px; margin-right:6px; vertical-align:1px; white-space:nowrap;
+  }
+  .gap-tag.reword{background:#e9f6ef; color:#1e7d4f;}
+  .gap-tag.earn{background:#fdf0e3; color:#9a5b00;}
   .act-list{margin:10px 0 0 20px; font-size:.86rem; line-height:1.55;}
   .act-list li{margin-bottom:11px;}
   .act-tag{
@@ -1077,6 +1084,7 @@
         </div>
       </div>
 
+      <div class="card" id="gapsPanel" style="display:none"></div>
       <div class="card" id="actionsPanel" style="display:none">
       </div>
 
@@ -2527,10 +2535,49 @@ function showAIResult(text){
   $("aiMsg").textContent=""; $("aiMsg").classList.remove("err");
   const out=$("aiOutput"); out.textContent=text; out.style.display="block";
   $("aiActions").style.display="flex";
+  renderGaps(text);
   renderNextActions(text);
   scheduleSave();
   $("aiPanel").scrollIntoView({behavior:"smooth", block:"nearest"});
 }
+/* Pull the "### Search terms a recruiter would use…" bullets out of the AI
+   feedback into their own panel. This is the single most useful thing the AI
+   pass produces that the form cannot: a recruiter finds candidates by keyword
+   search, so a term the CV lacks is a search the student never appears in.
+   Each bullet is tagged by what it costs to fix — reword something already
+   true, or go and earn it. We never suggest inserting a term they cannot
+   defend in an interview. */
+function renderGaps(md){
+  const p=$("gapsPanel");
+  const lines = md.split(/\r?\n/);
+  const start = lines.findIndex(l=>/^#{2,4}\s+.*search terms/i.test(l.trim()));
+  const bullets=[];
+  if(start!==-1){
+    for(let j=start+1;j<lines.length;j++){
+      const line=lines[j].trim();
+      if(/^#{1,6}\s/.test(line)) break;
+      if(/^[-*•]\s+/.test(line)) bullets.push(line.replace(/^[-*•]\s+/,""));
+      else if(line && bullets.length) bullets[bullets.length-1] += " "+line;
+    }
+  }
+  if(!bullets.length){ p.style.display="none"; return; }
+  const items = bullets.map(b=>{
+    let term="", rest=b;
+    const m = rest.match(/^\*\*(.+?)\*\*\s*[:—–-]?\s*/);
+    if(m){ term=m[1]; rest=rest.slice(m[0].length); }
+    else { const c=rest.match(/^([^:]{2,40}):\s*/); if(c){ term=c[1]; rest=rest.slice(c[0].length); } }
+    // The model states which kind it is; tag from its own wording rather than guessing.
+    const earn = /must be earned|do not yet have|don't yet have|requires real experience|need real experience/i.test(rest);
+    const tag = term ? `<span class="gap-tag ${earn?"earn":"reword"}">${earn?"earn it":"reword"}</span>` : "";
+    return `<li>${tag}${term?`<b>${esc(term)}</b> — `:""}${esc(rest)}</li>`;
+  }).join("");
+  p.innerHTML = `<h2>🔍 What a recruiter searches for that your CV doesn't say</h2>
+    <p class="hint">Recruiters find candidates by searching an applicant database for keywords. A term your CV doesn't contain is a search you never appear in. Tailored to your target: ${esc(targetText())}.</p>
+    <ul class="act-list">${items}</ul>
+    <p class="microhint" style="margin-top:10px">Only reword where it's already true. Anything tagged <b>earn it</b> has to be real before it goes on your CV — an interviewer will ask.</p>`;
+  p.style.display="block";
+}
+
 /* Pull the "### Three actions…" bullets out of the AI feedback and show them
    as their own panel, tailored to the selected target role. */
 function renderNextActions(md){
@@ -3018,6 +3065,16 @@ function parseAICV(md){
       const title = line.replace(/^#+\s+/,"");
       secSlug = slugFor(title);
       secHtml = `<h3 class="cv-sec">${mdInline(title)}</h3>`;
+      continue;
+    }
+    // Entry head: a line that is entirely bold, optionally followed by " — dates".
+    // Emits the SAME markup as the form renderer's .cv-entry-head so the AI view
+    // and the form view are styled identically under every template.
+    const head = line.match(/^\*\*(.+?)\*\*\s*(?:[—–|-]\s*(.+))?$/);
+    if(head && secHtml){
+      closeList();
+      const dates = head[2] ? `<span class="dates">${esc(head[2].trim())}</span>` : "";
+      secHtml += `<div class="cv-entry"><div class="cv-entry-head"><b>${mdInline(head[1])}</b>${dates}</div></div>`;
       continue;
     }
     if(/^[-*•]\s+/.test(line)){
