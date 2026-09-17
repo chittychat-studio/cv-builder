@@ -904,7 +904,7 @@
     <div class="pane-menu">
       <button class="pm-btn active" id="pmCV" onclick="setPane('cv')" title="Your CV, built live from the form">📄 My CV</button>
       <button class="pm-btn pm-tpl" onclick="openTplModal()" title="Pick a design — the preview restyles instantly">🎨 Style it</button>
-      <button class="pm-btn" id="pmHealth" onclick="setPane('health')" title="Score the CV you've built (or an imported file) the way an ATS reads it">🩺 Score it</button>
+      <button class="pm-btn" id="pmHealth" onclick="diagnoseAI()" title="Score the version shown (or a file chosen in the Import tab) the way an ATS reads it">🩺 Score it</button>
       <button class="pm-btn" id="pmTailor" onclick="setPane('tailor')" title="Sharpen your CV for one specific job advert">🎯 Match a job</button>
       <button class="pm-btn" id="pmReview" onclick="setPane('review')" title="Honest gaps in your CV and concrete actions to close them">🧭 Honest review</button>
       <button class="pm-btn" id="pmInterview" onclick="setPane('interview')" title="Practise a realistic interview for your target role">🎤 Mock interview</button>
@@ -1027,20 +1027,6 @@
       </div>
     </div>
 
-    <div class="gaps-panel" id="healthPanel" style="display:none">
-      <div class="card">
-        <h2 style="color:var(--accent)">🩺 Score it <span class="opt" style="font-weight:400; font-size:.8rem">(free — see how an ATS reads the CV you've built)</span>
-          <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipDiag',event)">i</button>
-            <span class="info-pop" id="ipDiag"><button class="ip-close" onclick="toggleInfo('ipDiag',event)">✕</button>
-            Scores <b>the CV you've built in the form</b> — or, if a file is chosen in the ⚡ Import tab, that file instead — the way an applicant tracking system parses it. <b>Free:</b> an instant automatic check (no AI involved) — your score plus the single biggest problem, 3 checks a day. <b>With AI:</b> Claude reads the whole CV — every flag, each with a concrete fix.</span>
-          </span>
-        </h2>
-        <div class="fill-row" style="margin-top:8px">
-          <button class="btn small" id="btnDiagnose" onclick="diagnoseAI()">🩺 Score my CV</button>
-        </div>
-        <p class="ai-msg" id="diagnoseMsg" aria-live="polite"></p>
-      </div>
-    </div>
 
     <div class="gaps-panel" id="gapsPanel"></div>
 
@@ -3203,13 +3189,10 @@ function downloadAIResult(){
 }
 
 /* ---------- step 1: CV health check (ATS score) ---------- */
-function setDiagnoseMsg(msg, isErr){
-  const el=$("diagnoseMsg"); el.textContent=msg; el.classList.toggle("err", !!isErr);
-}
 /* Scores the file chosen in the Import tab if there is one, otherwise whichever
    version the preview is currently showing, and returns the result in a popup. */
 async function diagnoseAI(){
-  const btn = $("btnDiagnose");
+  const btn = $("pmHealth");
   btn.disabled=true;
   const orig=btn.textContent;
   btn.textContent="⏳ Checking…";
@@ -3228,9 +3211,9 @@ async function diagnoseAI(){
       const fd=new FormData(); fd.append("file", f);
       let ex;
       try{ ex = await fetchTimeout("/api/extract-text", { method:"POST", body: fd }); }
-      catch(networkErr){ setDiagnoseMsg(isAbort(networkErr) ? "This is taking too long — please try again." : "Couldn't reach the server. Check your internet connection and try again — your CV is saved in this browser.", true); return; }
+      catch(networkErr){ openScore(`<h2>🩺 Couldn\'t score it</h2><p class="hint" style="margin-bottom:0">${esc(isAbort(networkErr) ? "This is taking too long — please try again." : "Couldn't reach the server. Check your internet connection and try again — your CV is saved in this browser.")}</p>`); return; }
       const exData = await ex.json().catch(()=>({}));
-      if(!ex.ok){ setDiagnoseMsg(exData.error||"Couldn't read that file.", true); return; }
+      if(!ex.ok){ openScore(`<h2>🩺 Couldn't score it</h2><p class="hint" style="margin-bottom:0">${esc(exData.error||"Couldn't read that file.")}</p>`); return; }
       text = exData.text||"";
     } else {
       // cvAsText(), not innerText. #cv renders .cv-entry-head as a flex row, so
@@ -3250,7 +3233,7 @@ async function diagnoseAI(){
     try{
       resp = await fetchTimeout("/api/diagnose", { method:"POST", headers, body: JSON.stringify({ text: text.slice(0,20000) }) });
     }catch(networkErr){
-      setDiagnoseMsg(isAbort(networkErr) ? "This is taking too long — please try again." : "Couldn't reach the server. Check your internet connection and try again — your CV is saved in this browser.", true);
+      openScore(`<h2>🩺 Couldn't score it</h2><p class="hint" style="margin-bottom:0">${esc(isAbort(networkErr) ? "This is taking too long — please try again." : "Couldn't reach the server. Check your internet connection and try again — your CV is saved in this browser.")}</p>`);
       return;
     }
     const data = await resp.json().catch(()=>({}));
@@ -3265,7 +3248,6 @@ async function diagnoseAI(){
     // without importing it first), but its findings open in the same window
     // rather than unrolling a second panel below the fold.
     openScore(diagnosisHtml(data, scoring));
-    setDiagnoseMsg("Scored " + scoring + ".");
   } finally {
     btn.disabled=false;
     btn.textContent=orig;
@@ -3318,7 +3300,6 @@ function setPane(p){
   const act=(id,on)=>{ const el=$(id); if(el) el.classList.toggle("active",on); };
   act("pmCV", p==="cv");
   act("pmImport", p==="import");
-  act("pmHealth", p==="health");
   act("pmTailor", p==="tailor");
   act("pmReview", p==="review");
   act("pmInterview", p==="interview");
@@ -3326,7 +3307,6 @@ function setPane(p){
   show("cv", p==="cv");
   show("exportBar", p==="cv");
   show("importPanel", p==="import");
-  show("healthPanel", p==="health");
   show("tailorPane", p==="tailor");
   show("gapsPanel", p==="review");
   // interviewPanel lives inside aiWrap, so aiWrap must be visible for it --
@@ -3667,7 +3647,7 @@ try{
       aiCVHtml=""; lastAIResult=""; viewMode="form";
       editedHtml.form=""; editedHtml.ai="";
       IV.transcript=[]; IV.done=false;
-      ["aiPanel","actionsPanel","searchTermsPanel","gapsPanel","healthPanel"].forEach(id=>{
+      ["aiPanel","actionsPanel","searchTermsPanel","gapsPanel"].forEach(id=>{
         const el=$(id); if(el){ if(id!=="aiPanel") el.innerHTML=""; el.style.display="none"; }
       });
       const ao=$("aiOutput"); if(ao){ ao.textContent=""; ao.style.display="none"; }
