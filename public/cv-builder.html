@@ -1257,7 +1257,13 @@ const SAVED_FIELDS = ["f_stage","f_name","f_dob","f_address","f_email","f_phone"
   "f_school","f_schooldates","f_gcse","f_quant","f_skills","f_responsibility","f_football","f_fitness",
   "f_awards","f_interests","f_wordtpl","f_joburl","f_jobdesc"];
 let saveTimer = null, restoring = false;
+// Set by clearSaved() so the reload it triggers cannot write the snapshot back.
+// beforeunload/pagehide fire during location.reload(), and flushPendingSave()
+// was re-saving everything -- including the AI CV -- microseconds after the key
+// was removed.
+let savingDisabled = false;
 function saveState(){
+  if(savingDisabled) return;
   const fields = {};
   SAVED_FIELDS.forEach(id => { if($(id)) fields[id] = $(id).value; });
   const snap = { fields, profileHtml: profileHtml(), qualifications:S.qualifications, projects:S.projects, jobs:S.jobs,
@@ -1324,6 +1330,13 @@ function restoreState(){
 }
 function clearSaved(){
   if(!confirm("Delete everything saved in this browser and start a blank CV?")) return;
+  // Order matters: stop any pending or unload-triggered save BEFORE deleting,
+  // or the reload below immediately writes the snapshot back.
+  savingDisabled = true;
+  clearTimeout(saveTimer); saveTimer = null;
+  // Drop the in-memory AI state too, so nothing can be re-serialised from it.
+  aiCVHtml = ""; lastAIResult = ""; viewMode = "form";
+  editedHtml.form = ""; editedHtml.ai = "";
   try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
   // Some browsers restore just-typed field values across a reload — independent
   // of our own localStorage and unaffected by autocomplete="off" — which made
@@ -3609,6 +3622,20 @@ try{
       S.qualifications=[]; S.projects=[]; S.jobs=[];
       addQualification(); addQualification(); addQualification();
       drawProjects(); drawJobs();
+      // The generated CV, the interview transcript and any hand-edits are CV
+      // content too. Leaving them on screen after "Clear & start over" showed
+      // the previous person's CV -- on a shared school computer that is a
+      // privacy failure, not a cosmetic one.
+      aiCVHtml=""; lastAIResult=""; viewMode="form";
+      editedHtml.form=""; editedHtml.ai="";
+      IV.transcript=[]; IV.done=false;
+      ["aiPanel","actionsPanel","searchTermsPanel","gapsPanel","healthPanel"].forEach(id=>{
+        const el=$(id); if(el){ if(id!=="aiPanel") el.innerHTML=""; el.style.display="none"; }
+      });
+      const ao=$("aiOutput"); if(ao){ ao.textContent=""; ao.style.display="none"; }
+      const aa=$("aiActions"); if(aa) aa.style.display="none";
+      if(typeof renderInterviewChat==="function") renderInterviewChat();
+      setPane("cv");
     };
     blankTrackedFields();
     // Chrome/Edge can autofill name/email/address fields (and, it turns out,
