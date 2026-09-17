@@ -929,8 +929,6 @@
         <button class="vt-btn active" id="vtForm" onclick="setView('form')">Form version</button>
         <button class="vt-btn" id="vtAI" onclick="setView('ai')" disabled title="Generate with AI, then click 'Use this version'">AI version</button>
       </div>
-      <button class="btn small ghost" id="btnScoreView" onclick="scoreCurrentView()"
-              title="Score the version shown here the way an ATS reads it">🩺 Score this version</button>
       <div class="edit-bar" id="editBar"></div>
     </div>
     <div class="a4" id="cv"></div>
@@ -3208,12 +3206,10 @@ function downloadAIResult(){
 function setDiagnoseMsg(msg, isErr){
   const el=$("diagnoseMsg"); el.textContent=msg; el.classList.toggle("err", !!isErr);
 }
-/* target: "panel" = the Score it pane (may score an imported file)
-          "modal" = the popup beside the preview, which always scores the
-                    version currently shown, never a file. */
-async function diagnoseAI(target){
-  target = target || "panel";
-  const btn = target==="modal" ? $("btnScoreView") : $("btnDiagnose");
+/* Scores the file chosen in the Import tab if there is one, otherwise whichever
+   version the preview is currently showing, and returns the result in a popup. */
+async function diagnoseAI(){
+  const btn = $("btnDiagnose");
   btn.disabled=true;
   const orig=btn.textContent;
   btn.textContent="⏳ Checking…";
@@ -3225,7 +3221,7 @@ async function diagnoseAI(target){
     const shownVersion = (viewMode === "ai" && aiCVHtml) ? "the ✨ AI version" : "the version built from your form";
     // The popup deliberately ignores any chosen file: its whole point is to
     // score the version you are looking at.
-    const f = target==="modal" ? null : $("f_cvfile").files[0];
+    const f = $("f_cvfile").files[0];
     const scoring = f ? "the file you chose" : shownVersion;
     let text="";
     if(f){
@@ -3269,13 +3265,12 @@ async function diagnoseAI(target){
     // without importing it first), but its findings open in the same window
     // rather than unrolling a second panel below the fold.
     openScore(diagnosisHtml(data, scoring));
-    if(target!=="modal") setDiagnoseMsg("Scored " + scoring + ".");
+    setDiagnoseMsg("Scored " + scoring + ".");
   } finally {
     btn.disabled=false;
     btn.textContent=orig;
   }
 }
-function scoreCurrentView(){ diagnoseAI("modal"); }
 function openScore(html){ $("scoreModalBody").innerHTML = html; $("scoreWrap").classList.add("show"); }
 function closeScore(){ $("scoreWrap").classList.remove("show"); }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeScore(); });
