@@ -3131,7 +3131,15 @@ function parseAICV(md){
       flushSec(); contactDone = true;
       const title = line.replace(/^#+\s+/,"");
       secSlug = slugFor(title);
-      secHtml = `<h3 class="cv-sec">${mdInline(title)}</h3>`;
+      // Don't trust the model to obey the heading rule — enforce it. slugFor()
+      // already classifies whatever it wrote; render the canonical label for
+      // every class it recognises, so "Experience & Responsibility" or
+      // "Projects & Technical Activity" cannot reach the CV (or the health
+      // check, which flags them as non-standard) however the model phrases it.
+      // Only an unrecognised heading keeps the model's own wording.
+      const CANON = { profile:"Profile", education:"Education", projects:"Projects",
+                      experience:"Work Experience", skills:"Skills", interests:"Interests" };
+      secHtml = `<h3 class="cv-sec">${CANON[secSlug] ? esc(CANON[secSlug]) : mdInline(title)}</h3>`;
       continue;
     }
     // Entry head: a line that is entirely bold, optionally followed by " — dates".
