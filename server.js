@@ -467,6 +467,20 @@ function createApp(options = {}) {
           `Add a clearly-headed ${name.toLowerCase()} section.`);
       }
     }
+    // Headings are a string comparison, not a judgement. The model was
+    // re-deciding this every run and disagreeing with itself.
+    const CANON = ['profile', 'education', 'projects', 'work experience', 'skills', 'interests'];
+    for (const line of text.split(/\r?\n/)) {
+      const h = line.trim();
+      // cvAsText() uppercases section headings, so that is how we spot them.
+      if (!h || h !== h.toUpperCase() || h.length > 40 || !/[A-Z]/.test(h)) continue;
+      if (/^[•\-]/.test(h)) continue;
+      if (!CANON.includes(h.toLowerCase())) {
+        add('medium', h, `Heading "${h}" is not one an ATS reliably recognises.`,
+          'Use one of: Profile, Education, Projects, Work Experience, Skills, Interests.');
+      }
+    }
+
     if (text.length < 900) {
       add('low', 'Overall', 'The CV is very short — a skim gives a recruiter little to say yes to.',
         'Fill in more of the builder steps; even small true items help.');
@@ -538,7 +552,17 @@ function createApp(options = {}) {
       return res.status(500).json({ error: 'Server is not configured with an ANTHROPIC_API_KEY.' });
     }
     try {
-      const raw = await diagnoseCV(client, text.slice(0, 20000));
+      // Rules first. Everything mechanically checkable -- contact details,
+      // dates, headings, length -- is decided in code so it cannot change
+      // between two runs on the same CV. The model is asked only for what
+      // rules cannot see, and told what has already been found so it does not
+      // restate it. This is why the score moved (70, 66, 80 on one unchanged
+      // CV): the model was re-deciding objective facts every time.
+      const rules = basicDiagnose(text);
+      const already = rules.flags.map((f) => `- ${f.section}: ${f.problem}`).join('\n') || '- (none)';
+      const raw = await diagnoseCV(client,
+        `ALREADY DETECTED by deterministic checks -- do NOT repeat any of these:\n${already}\n\nCV TEXT:\n`
+        + text.slice(0, 20000));
       const parsed = parseModelJson(raw);
       if (!parsed || typeof parsed.score !== 'number' || !Array.isArray(parsed.flags)) {
         console.error(`${new Date().toISOString()} diagnose error: model returned an unexpected shape`);
@@ -555,6 +579,16 @@ function createApp(options = {}) {
       // The flags stay the model's judgement; the number is now derived from
       // them, so it is reproducible, always consistent with what is on screen,
       // and can only improve when a flag is actually cleared.
+      // Deterministic flags first, then the model's, de-duplicated on section +
+      // problem so a restated rule flag cannot be counted twice.
+      const seen = new Set(rules.flags.map((f) => `${f.section}|${f.problem}`.toLowerCase()));
+      const extra = parsed.flags.filter((f) => {
+        const k = `${f && f.section}|${f && f.problem}`.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      parsed.flags = [...rules.flags, ...extra];
       parsed.score = scoreFromFlags(parsed.flags);
       res.json({ result: parsed, locked: 0, ai: true, beta: !!access.beta });
     } catch (err) {

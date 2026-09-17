@@ -838,12 +838,17 @@ test('diagnose returns the full report for licensed users', async (t) => {
   });
   assert.equal(res.status, 200);
   const data = await res.json();
-  // The score is DERIVED from the flags, not taken from the model. The stub
-  // says 62; one high (15) + one medium (7) + one low (3) = 25, so 75. The
-  // model generated its number and its flag list independently and the two
-  // disagreed -- one live run gave 6 flags and 75, the next 5 flags and 65.
-  assert.equal(data.result.score, 75);
-  assert.equal(data.result.flags.length, 3);
+  // Deterministic rules run first and are authoritative; the model's flags are
+  // appended. The stub's own score is ignored entirely and the number is
+  // derived from the merged list, so it always matches what is displayed.
+  assert.equal(data.result.score, scoreFromFlags(data.result.flags));
+  // This two-line "CV" has no email, no phone and no sections, so the rules
+  // alone must have caught several things before the model said anything.
+  assert.ok(data.result.flags.length > 3, 'rule flags should be merged in, not replaced');
+  assert.ok(data.result.flags.some((f) => /contact/i.test(f.section)),
+    'deterministic contact-details check must appear');
+  assert.ok(data.result.flags.some((f) => f.problem === 'Vague'),
+    "the model's judgement flags must still be included");
   assert.equal(data.locked, 0);
 
   const empty = await fetch(`${base}/api/diagnose`, {
@@ -2004,4 +2009,36 @@ test('/api/usage reports the provider before any AI call has been made', async (
   assert.equal(data.provider, 'groq');
   assert.equal(typeof data.dailyTokenBudget, 'number');
   assert.equal(data.ledgerResetsOnRestart, true);
+});
+
+test('the same CV scores the same twice even when the model varies its flags', async (t) => {
+  // Two different model responses for identical input — the failure we saw live
+  // (70, 66, 80 on one unchanged CV). The deterministic part must not move.
+  let call = 0;
+  const varying = {
+    messages: {
+      create: async () => {
+        call += 1;
+        const flags = call === 1
+          ? [{ section: 'Skills', severity: 'low', problem: 'Vague', fix: 'Name tools.' }]
+          : [{ section: 'Skills', severity: 'low', problem: 'Vague', fix: 'Name tools.' },
+             { section: 'Profile', severity: 'low', problem: 'Thin', fix: 'Name the role.' }];
+        return { content: [{ type: 'text', text: JSON.stringify({ score: 99, summary: 's', flags }) }] };
+      },
+    },
+  };
+  const { server, base } = await startApp({ betaMode: true, anthropic: varying });
+  t.after(() => server.close());
+
+  const body = JSON.stringify({ text: 'Sam Example\nA Levels: Maths (A)' });
+  const headers = { 'Content-Type': 'application/json' };
+  const a = await (await fetch(`${base}/api/diagnose`, { method: 'POST', headers, body })).json();
+  const b = await (await fetch(`${base}/api/diagnose`, { method: 'POST', headers, body })).json();
+
+  const ruleFlags = (r) => r.result.flags.filter((f) => f.problem !== 'Vague' && f.problem !== 'Thin');
+  assert.deepEqual(ruleFlags(a), ruleFlags(b), 'the deterministic flags must be identical run to run');
+  assert.equal(a.result.score, scoreFromFlags(a.result.flags));
+  assert.equal(b.result.score, scoreFromFlags(b.result.flags));
+  // The remaining movement is only the model's extra flag, bounded to 3.
+  assert.ok(Math.abs(a.result.score - b.result.score) <= 9);
 });
