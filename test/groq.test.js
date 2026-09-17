@@ -222,3 +222,33 @@ test('rate-limit headers are read from error responses too', async () => {
   assert.equal(l.tokensLeft, 0);
   assert.equal(l.resetsInMs.tokens, 30000);
 });
+
+// --- reasoning models ------------------------------------------------------
+
+test('output_config.effort maps onto reasoning_effort instead of being dropped', async () => {
+  const cap = {};
+  const client = createGroqClient('k', { fetchImpl: fakeFetch(cap, okReply) });
+  await client.messages.create({
+    max_tokens: 6000, system: 'S', messages: [],
+    output_config: { effort: 'medium' },
+  });
+  assert.equal(cap.body.reasoning_effort, 'medium');
+  assert.equal(cap.body.max_completion_tokens, 6000, 'reasoning models use max_completion_tokens');
+  assert.ok(!('output_config' in cap.body));
+});
+
+test('reasoning effort defaults to low — hidden reasoning is the costliest thing on a token-bound free tier', async () => {
+  const cap = {};
+  const client = createGroqClient('k', { fetchImpl: fakeFetch(cap, okReply) });
+  await client.messages.create({ max_tokens: 100, system: 'S', messages: [] });
+  assert.equal(cap.body.reasoning_effort, 'low');
+});
+
+test('an unrecognised effort value falls back to low rather than being sent through', async () => {
+  const cap = {};
+  const client = createGroqClient('k', { fetchImpl: fakeFetch(cap, okReply) });
+  await client.messages.create({
+    max_tokens: 100, system: 'S', messages: [], output_config: { effort: 'maximum' },
+  });
+  assert.equal(cap.body.reasoning_effort, 'low');
+});
