@@ -47,6 +47,21 @@ function handleModelError(err, res, route) {
     res.status(502).json({ error: 'The response was too long — try shorter input.' });
     return true;
   }
+  // The free tier's tokens-per-minute ceiling. Two AI actions in quick
+  // succession can hit it, and it was surfacing as a generic failure the user
+  // could do nothing with. Say what it is and roughly how long to wait.
+  if (err && err.rateLimited) {
+    const secs = err.retryAfterMs ? Math.max(1, Math.ceil(err.retryAfterMs / 1000)) : null;
+    logEvent(route, 429, 'provider-rate-limit');
+    res.status(429).json({
+      error: secs
+        ? `AI help is busy right now — try again in about ${secs} second${secs === 1 ? '' : 's'}. Your CV is unaffected.`
+        : 'AI help is busy right now — try again in a few seconds. Your CV is unaffected.',
+      retryAfterMs: err.retryAfterMs || null,
+      rateLimited: true,
+    });
+    return true;
+  }
   return false;
 }
 

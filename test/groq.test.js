@@ -252,3 +252,29 @@ test('an unrecognised effort value falls back to low rather than being sent thro
   });
   assert.equal(cap.body.reasoning_effort, 'low');
 });
+
+test('a 429 is flagged as rateLimited with a wait, not a generic failure', async () => {
+  const client = createGroqClient('k', {
+    fetchImpl: async () => ({
+      ok: false, status: 429,
+      headers: hdrs({ 'retry-after': '12', 'x-ratelimit-remaining-tokens': '0' }),
+      text: async () => 'Rate limit reached for model gpt-oss-20b',
+    }),
+  });
+  await assert.rejects(
+    () => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }),
+    (e) => e.rateLimited === true && e.retryAfterMs === 12000 && e.modelUnavailable === false
+  );
+});
+
+test('a 429 does not trigger the model fallback', async () => {
+  const seen = [];
+  const client = createGroqClient('k', {
+    fetchImpl: async (url, init) => {
+      seen.push(JSON.parse(init.body).model);
+      return { ok: false, status: 429, headers: hdrs({}), text: async () => 'rate limit' };
+    },
+  });
+  await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
+  assert.equal(seen.length, 1);
+});
