@@ -501,6 +501,28 @@ function createApp(options = {}) {
     });
   });
 
+  /**
+   * How much free-tier headroom is left before AI stops working.
+   *
+   * Figures come from Groq's own rate-limit response headers, not from a local
+   * estimate -- the provider already accounts for cached tokens (which do not
+   * count toward limits), so its numbers are the ones that decide whether the
+   * next call succeeds. Everything is null until the first AI call of this
+   * process has happened: an invented number here would be worse than none.
+   *
+   * `callsLeft` is the answer to "how many more requests before it fills up" --
+   * whichever of the request cap or the token cap runs out first, expressed in
+   * requests, using the measured average tokens per call so far. `boundBy` says
+   * which of the two is the binding constraint.
+   */
+  app.get('/api/usage', (req, res) => {
+    const client = anthropic;
+    if (!client || typeof client.limits !== 'function') {
+      return res.json({ provider: client ? 'anthropic' : 'none', tracked: false });
+    }
+    res.json({ provider: 'groq', tracked: true, ...client.limits() });
+  });
+
   // Role keyword gap: pulls a corpus of real ingested job adverts for the
   // target role from the JobPilot API, then has the model diff the CV facts
   // against what those adverts actually ask for. Feature-flagged: without

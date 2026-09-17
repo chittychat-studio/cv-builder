@@ -145,3 +145,80 @@ test('a non-model 400 does not fall back', async () => {
   await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
   assert.equal(seen.length, 1);
 });
+
+// --- usage / headroom reporting -------------------------------------------
+
+function hdrs(map) {
+  return { get: (k) => (k.toLowerCase() in map ? map[k.toLowerCase()] : null) };
+}
+
+test('limits() is null until a call has happened — it never guesses', () => {
+  const c = createGroqClient('k');
+  const l = c.limits();
+  assert.equal(l.callsLeft, null);
+  assert.equal(l.avgTokensPerCall, null);
+});
+
+test('reads Groq rate-limit headers and reports calls remaining', async () => {
+  const client = createGroqClient('k', {
+    fetchImpl: async () => ({
+      ok: true,
+      headers: hdrs({
+        'x-ratelimit-limit-requests': '1000',
+        'x-ratelimit-remaining-requests': '940',
+        'x-ratelimit-limit-tokens': '8000',
+        'x-ratelimit-remaining-tokens': '6000',
+        'x-ratelimit-reset-tokens': '7.66s',
+        'x-ratelimit-reset-requests': '2m59.5s',
+      }),
+      json: async () => ({
+        choices: [{ message: { content: 'x' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 900, completion_tokens: 100, total_tokens: 1000,
+                 prompt_tokens_details: { cached_tokens: 400 } },
+      }),
+    }),
+  });
+  await client.messages.create({ max_tokens: 10, system: 'S', messages: [] });
+  const l = client.limits();
+
+  assert.equal(l.requestsLeft, 940);
+  assert.equal(l.tokensLeft, 6000);
+  assert.equal(l.avgTokensPerCall, 1000);
+  // 6000 tokens / 1000 per call = 6 calls; 940 requests left. Tokens bind.
+  assert.equal(l.callsLeft, 6);
+  assert.equal(l.boundBy, 'tokens');
+  assert.equal(l.resetsInMs.tokens, 7660);
+  assert.equal(l.resetsInMs.requests, 179500);
+  assert.equal(l.observed.cachedTokens, 400);
+});
+
+test('reports requests as the binding constraint when they run out first', async () => {
+  const client = createGroqClient('k', {
+    fetchImpl: async () => ({
+      ok: true,
+      headers: hdrs({ 'x-ratelimit-remaining-requests': '3', 'x-ratelimit-remaining-tokens': '7000' }),
+      json: async () => ({
+        choices: [{ message: { content: 'x' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 90, completion_tokens: 10, total_tokens: 100 },
+      }),
+    }),
+  });
+  await client.messages.create({ max_tokens: 10, system: 'S', messages: [] });
+  const l = client.limits();
+  assert.equal(l.callsLeft, 3);
+  assert.equal(l.boundBy, 'requests');
+});
+
+test('rate-limit headers are read from error responses too', async () => {
+  const client = createGroqClient('k', {
+    fetchImpl: async () => ({
+      ok: false, status: 429,
+      headers: hdrs({ 'x-ratelimit-remaining-tokens': '0', 'x-ratelimit-reset-tokens': '30s' }),
+      text: async () => 'rate limit reached',
+    }),
+  });
+  await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
+  const l = client.limits();
+  assert.equal(l.tokensLeft, 0);
+  assert.equal(l.resetsInMs.tokens, 30000);
+});
