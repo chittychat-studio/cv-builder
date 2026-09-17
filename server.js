@@ -99,9 +99,10 @@ function createRateLimiter() {
  */
 function createApp(options = {}) {
   const config = {
-    // Paid-only by default: every AI route needs a licence key unless
-    // BETA_MODE=true is set explicitly (local testing / promos).
-    betaMode: options.betaMode ?? (process.env.BETA_MODE ?? 'false') === 'true',
+    // Free by default (CLAUDE.md D1): school leavers never need a licence key.
+    // Spend is bounded by betaMonthlyAiLimit / interviewDailyLimit / freeDiagnoseLimit
+    // below, not by a paywall. Set BETA_MODE=false only to put the paywall back.
+    betaMode: options.betaMode ?? (process.env.BETA_MODE ?? 'true') !== 'false',
     checkoutUrl: options.checkoutUrl ?? process.env.LEMONSQUEEZY_CHECKOUT_URL ?? '',
     webhookSecret: options.webhookSecret ?? process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? '',
     lsApiKey: options.lsApiKey ?? process.env.LEMONSQUEEZY_API_KEY ?? '',
@@ -1025,7 +1026,7 @@ if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
   const app = createApp();
   app.listen(port, () => {
-    const beta = (process.env.BETA_MODE ?? 'false') === 'true';
+    const beta = (process.env.BETA_MODE ?? 'true') !== 'false';
     console.log(`CV Builder listening on http://localhost:${port} (beta mode: ${beta ? 'ON — free for everyone' : 'off — AI needs a licence key'})`);
   });
 }
