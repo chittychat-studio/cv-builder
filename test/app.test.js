@@ -1984,3 +1984,24 @@ test('a clean CV scores 100 and the score never goes below 0', () => {
 test('an unknown severity is treated as medium rather than ignored', () => {
   assert.equal(scoreFromFlags([{ severity: 'catastrophic' }]), scoreFromFlags([{ severity: 'medium' }]));
 });
+
+// --- /api/usage must not depend on a call having already happened -----------
+
+test('/api/usage reports the provider before any AI call has been made', async (t) => {
+  const groqish = {
+    limits: () => ({ tokensUsedLast24h: 0, callsLeft: null, avgTokensPerCall: null }),
+    tokensUsedLast24h: () => 0,
+    messages: { create: async () => ({ content: [{ type: 'text', text: 'x' }] }) },
+  };
+  const { server, base } = await startApp({ betaMode: true, anthropic: groqish });
+  t.after(() => server.close());
+
+  // Deliberately no AI call first — this is the cold-start case that reported
+  // provider "none" while a key was configured.
+  const res = await fetch(`${base}/api/usage`);
+  const data = await res.json();
+  assert.equal(data.tracked, true);
+  assert.equal(data.provider, 'groq');
+  assert.equal(typeof data.dailyTokenBudget, 'number');
+  assert.equal(data.ledgerResetsOnRestart, true);
+});

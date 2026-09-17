@@ -114,6 +114,8 @@ function scoreFromFlags(flags) {
   return Math.max(0, Math.min(100, 100 - penalty));
 }
 
+const processStarted = new Date().toISOString();
+
 function createApp(options = {}) {
   const config = {
     // Free by default (CLAUDE.md D1): school leavers never need a licence key.
@@ -245,7 +247,7 @@ function createApp(options = {}) {
    * post-mortem. Returns true when the request was refused.
    */
   function overTokenBudget(res, route) {
-    const client = anthropic;
+    const client = getAnthropic();
     if (!client || typeof client.tokensUsedLast24h !== 'function') return false;
     const used = client.tokensUsedLast24h();
     if (used < config.dailyTokenBudget) return false;
@@ -575,7 +577,11 @@ function createApp(options = {}) {
    * which of the two is the binding constraint.
    */
   app.get('/api/usage', (req, res) => {
-    const client = anthropic;
+    // getAnthropic(), not the lazy `anthropic` variable: the client is only
+    // constructed on the first AI call, so reading the variable directly
+    // reported provider "none" on any process that had not served one yet --
+    // which on Render's free tier is every cold start.
+    const client = getAnthropic();
     if (!client || typeof client.limits !== 'function') {
       return res.json({ provider: client ? 'anthropic' : 'none', tracked: false });
     }
@@ -584,6 +590,13 @@ function createApp(options = {}) {
       provider: 'groq', tracked: true,
       dailyTokenBudget: config.dailyTokenBudget,
       tokensLeftToday: Math.max(0, config.dailyTokenBudget - l.tokensUsedLast24h),
+      // The ledger is in-memory and this app has no database, so it resets
+      // whenever the process restarts. On Render's free tier the instance
+      // sleeps when idle, so "last 24h" in practice means "since this instance
+      // last woke". Stated rather than implied, because a budget that silently
+      // resets is worse than no budget.
+      ledgerSince: processStarted,
+      ledgerResetsOnRestart: true,
       ...l,
     });
   });
