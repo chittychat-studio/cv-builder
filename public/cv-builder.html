@@ -243,7 +243,7 @@
   #cv{transition:opacity .18s ease;}
 
   /* ---------- version toggle + edit, one aligned row under the preview ---------- */
-  .preview-controls{max-width:760px; margin:12px auto; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+  .preview-controls{max-width:760px; margin:0 auto 10px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
   .preview-controls .view-toggle, .preview-controls .edit-bar{margin:0; max-width:none;}
 
   /* ---------- Collapsible result panels ---------- */
@@ -924,8 +924,6 @@
       </div>
     </div>
 
-    <div class="a4" id="cv"></div>
-
     <div class="preview-controls" id="previewControls">
       <div class="view-toggle" id="viewToggle">
         <button class="vt-btn active" id="vtForm" onclick="setView('form')">Form version</button>
@@ -935,6 +933,8 @@
               title="Score the version shown here the way an ATS reads it">🩺 Score this version</button>
       <div class="edit-bar" id="editBar"></div>
     </div>
+    <div class="a4" id="cv"></div>
+
 
     <div class="export-bar" id="exportBar">
       <select id="f_wordtpl" style="display:none">
