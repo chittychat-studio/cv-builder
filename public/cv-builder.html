@@ -595,6 +595,7 @@
   .upgrade-panel h2{color:var(--accent);}
   .upgrade-panel .ip-close{position:absolute; top:12px; right:14px; border:none; background:none; color:var(--ink-faint); cursor:pointer; font-size:1rem; padding:4px;}
   .upgrade-panel .field{margin-top:12px;}
+  .score-panel{max-width:640px; max-height:82vh; overflow:auto;}
 
   /* ---------- Footer ---------- */
   .site-footer{
@@ -930,6 +931,8 @@
         <button class="vt-btn active" id="vtForm" onclick="setView('form')">Form version</button>
         <button class="vt-btn" id="vtAI" onclick="setView('ai')" disabled title="Generate with AI, then click 'Use this version'">AI version</button>
       </div>
+      <button class="btn small ghost" id="btnScoreView" onclick="scoreCurrentView()"
+              title="Score the version shown here the way an ATS reads it">🩺 Score this version</button>
       <div class="edit-bar" id="editBar"></div>
     </div>
 
@@ -1047,6 +1050,13 @@
     <!-- Not gated by setPane's per-pane show/hide: a 402 can happen from the Tailor,
          Import or Keyword-gap panes too, and the subscribe card must still be reachable
          there — see showUpgrade(). -->
+    <div class="upgrade-modal" id="scoreWrap" onclick="if(event.target===this)closeScore()">
+      <div class="card upgrade-panel score-panel">
+        <button class="ip-close" onclick="closeScore()" aria-label="Close">✕</button>
+        <div id="scoreModalBody"></div>
+      </div>
+    </div>
+
     <div class="upgrade-modal" id="upgradeWrap" onclick="if(event.target===this)closeUpgrade()">
       <div class="card upgrade-panel" id="upgradePanel" role="dialog" aria-modal="true" aria-labelledby="upgradeTitle">
         <button class="ip-close" onclick="closeUpgrade()" title="Close">✕</button>
@@ -3199,8 +3209,12 @@ function downloadAIResult(){
 function setDiagnoseMsg(msg, isErr){
   const el=$("diagnoseMsg"); el.textContent=msg; el.classList.toggle("err", !!isErr);
 }
-async function diagnoseAI(){
-  const btn=$("btnDiagnose");
+/* target: "panel" = the Score it pane (may score an imported file)
+          "modal" = the popup beside the preview, which always scores the
+                    version currently shown, never a file. */
+async function diagnoseAI(target){
+  target = target || "panel";
+  const btn = target==="modal" ? $("btnScoreView") : $("btnDiagnose");
   btn.disabled=true;
   const orig=btn.textContent;
   btn.textContent="⏳ Checking…";
@@ -3209,10 +3223,12 @@ async function diagnoseAI(){
     // currently showing. #cv holds the form version or the AI version depending
     // on the view toggle, so the score changes meaning with it — say which,
     // rather than leaving the student to guess.
-    const scoring = $("f_cvfile").files[0] ? "the file you chose"
-      : (viewMode === "ai" && aiCVHtml) ? "the ✨ AI version" : "the version built from your form";
+    const shownVersion = (viewMode === "ai" && aiCVHtml) ? "the ✨ AI version" : "the version built from your form";
+    // The popup deliberately ignores any chosen file: its whole point is to
+    // score the version you are looking at.
+    const f = target==="modal" ? null : $("f_cvfile").files[0];
+    const scoring = f ? "the file you chose" : shownVersion;
     let text="";
-    const f=$("f_cvfile").files[0];
     if(f){
       const fd=new FormData(); fd.append("file", f);
       let ex;
@@ -3229,6 +3245,10 @@ async function diagnoseAI(){
       // (It existed for exactly this and was never wired up.)
       text = cvAsText();
     }
+    if(target==="modal" && text.trim().length < 80){
+      openScore(`<h2>🩺 Nothing to score yet</h2><p class="hint" style="margin-bottom:0">Fill in a few steps first — there isn't enough CV here to check.</p>`);
+      return;
+    }
     if(text.trim().length < 80){
       setDiagnoseMsg("Not enough CV to check yet — choose a file above, or fill in a few steps first.", true);
       return;
@@ -3243,16 +3263,27 @@ async function diagnoseAI(){
       return;
     }
     const data = await resp.json().catch(()=>({}));
-    if(!resp.ok){ setDiagnoseMsg(data.error||"CV check failed — please try again in a moment.", true); return; }
+    if(!resp.ok){
+      const msg = data.error||"CV check failed — please try again in a moment.";
+      if(target==="modal") openScore(`<h2>🩺 Couldn't score it</h2><p class="hint" style="margin-bottom:0">${esc(msg)}</p>`);
+      else setDiagnoseMsg(msg, true);
+      return;
+    }
     if(data.beta) $("betaBadge").classList.add("show");
-    renderDiagnosis(data);
-    setDiagnoseMsg("Scored " + scoring + ".");
+    if(target==="modal"){ openScore(diagnosisHtml(data, scoring, true)); }
+    else { renderDiagnosis(data, scoring); setDiagnoseMsg("Scored " + scoring + "."); }
   } finally {
     btn.disabled=false;
     btn.textContent=orig;
   }
 }
-function renderDiagnosis(data){
+function scoreCurrentView(){ diagnoseAI("modal"); }
+function openScore(html){ $("scoreModalBody").innerHTML = html; $("scoreWrap").classList.add("show"); }
+function closeScore(){ $("scoreWrap").classList.remove("show"); }
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeScore(); });
+
+/* Shared by the Score it pane and the popup so the two can never drift apart. */
+function diagnosisHtml(data, scoring, isModal){
   const r=data.result||{};
   const score=Math.max(0, Math.min(100, +r.score||0));
   const cls = score>=80 ? "score-green" : score>=50 ? "score-amber" : "score-red";
@@ -3264,14 +3295,20 @@ function renderDiagnosis(data){
     ? `<p class="microhint">🔒 <b>${data.locked} more flag${data.locked>1?"s":""}</b> found${data.ai===false?" by the automatic check":""} — the ✨ AI report gets Claude to read the whole CV: every flag, each with a concrete fix.` +
       (data.checkoutUrl?` <a href="${esc(data.checkoutUrl)}" target="_blank" rel="noopener">Unlock the full check →</a>`:"") + `</p>`
     : (data.ai===false ? `<p class="microhint">Automatic checks passed — the AI upgrade digs into wording, evidence and role keywords.</p>` : "");
-  const p=$("diagnosePanel");
-  p.innerHTML =
-    `<div class="pt-bar" onclick="togglePanel('diagnosePanel')">🩺 Health check — score ${score}` +
-    `<span class="pt-hint"><span class="pt-close">▾ hide</span><span class="pt-open">▸ show</span></span></div>` +
+  const head = isModal
+    ? `<h2 style="margin-bottom:2px">🩺 Health check — score ${score}</h2>`
+    : `<div class="pt-bar" onclick="togglePanel('diagnosePanel')">🩺 Health check — score ${score}` +
+      `<span class="pt-hint"><span class="pt-close">▾ hide</span><span class="pt-open">▸ show</span></span></div>`;
+  return head +
+    `<p class="microhint" style="margin:0 0 10px">Scored ${esc(scoring||"this CV")}.</p>` +
     `<div class="score-row"><span class="score-badge ${cls}">${score}</span>` +
     `<div><div class="sp-title" style="margin:0">CV health score</div><div style="font-size:13px">${esc(r.summary||"")}</div></div></div>` +
     (flags?`<ul>${flags}</ul>`:"") + locked +
     `<p class="microhint">Fix the flags (the builder steps and ✨ AI rewrite help), then check again — watch the score climb before you apply.</p>`;
+}
+function renderDiagnosis(data, scoring){
+  const p=$("diagnosePanel");
+  p.innerHTML = diagnosisHtml(data, scoring, false);
   p.classList.remove("collapsed");
   p.classList.add("show");
 }
