@@ -561,7 +561,7 @@
   .ai-msg{font-size:.84rem; color:var(--ink-soft); margin-top:6px;}
   .ai-msg.err{color:var(--danger);}
   #actionsPanel h2{color:var(--ok);}
-  #gapsPanel h2{color:#9a5b00;}
+  #searchTermsPanel h2{color:#9a5b00;}
   .gap-tag{
     display:inline-block; font-size:.72rem; font-weight:700; border-radius:5px;
     padding:1px 7px; margin-right:6px; vertical-align:1px; white-space:nowrap;
@@ -1084,7 +1084,7 @@
         </div>
       </div>
 
-      <div class="card" id="gapsPanel" style="display:none"></div>
+      <div class="card" id="searchTermsPanel" style="display:none"></div>
       <div class="card" id="actionsPanel" style="display:none">
       </div>
 
@@ -2552,7 +2552,7 @@ function showAIResult(text){
   $("aiMsg").textContent=""; $("aiMsg").classList.remove("err");
   const out=$("aiOutput"); out.textContent=text; out.style.display="block";
   $("aiActions").style.display="flex";
-  renderGaps(text);
+  renderSearchTerms(text);
   renderNextActions(text);
   scheduleSave();
   $("aiPanel").scrollIntoView({behavior:"smooth", block:"nearest"});
@@ -2564,8 +2564,8 @@ function showAIResult(text){
    Each bullet is tagged by what it costs to fix — reword something already
    true, or go and earn it. We never suggest inserting a term they cannot
    defend in an interview. */
-function renderGaps(md){
-  const p=$("gapsPanel");
+function renderSearchTerms(md){
+  const p=$("searchTermsPanel");
   const lines = md.split(/\r?\n/);
   const start = lines.findIndex(l=>/^#{2,4}\s+.*search terms/i.test(l.trim()));
   const bullets=[];
@@ -2909,6 +2909,30 @@ async function importCV(){
     btn.textContent=orig;
   }
 }
+/* UK date forms seen on real CVs -> ISO for the native date input. Day-first is
+   assumed (UK), so 03/04/2008 reads as 3 April. Anything partial, impossible
+   (31 February) or implausible as a birth date is rejected rather than guessed.
+   Note: UK CVs normally omit date of birth — this field is optional and is
+   never written into the generated CV. */
+let dobUnparsed = "";
+const DOB_MONTH_NAMES = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+function parseDobToIso(raw){
+  const t = String(raw).trim().replace(/(\d+)(st|nd|rd|th)\b/gi,"$1");
+  let d, mo, y, m;
+  if((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else if((m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/))){ d=+m[1]; mo=+m[2]; y=+m[3]; }
+  else if((m = t.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/))){ d=+m[1]; mo=DOB_MONTH_NAMES[m[2].slice(0,3).toLowerCase()]; y=+m[3]; }
+  else if((m = t.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})$/))){ mo=DOB_MONTH_NAMES[m[1].slice(0,3).toLowerCase()]; d=+m[2]; y=+m[3]; }
+  else return "";
+  if(!d || !mo || !y || mo<1 || mo>12 || d<1 || d>31) return "";
+  const nowY = new Date().getFullYear();
+  if(y < nowY-100 || y > nowY) return "";
+  const iso = `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const chk = new Date(iso+"T00:00:00Z");
+  if(isNaN(chk.getTime()) || chk.getUTCDate() !== d) return "";
+  return iso;
+}
+
 function applyImport(raw, usedAI=true, upgradeAvailable=false){
   let obj=null;
   try{ obj = JSON.parse(raw.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g,"").trim()); }catch(e){}
@@ -2918,13 +2942,19 @@ function applyImport(raw, usedAI=true, upgradeAvailable=false){
     if(m){ try{ obj = JSON.parse(m[0]); }catch(e){} }
   }
   if(!obj){ setImportMsg("Couldn't read a CV out of that file — try a text-based PDF or DOCX (not a scan/photo).", true); return; }
+  dobUnparsed = "";
   // Fill only what's empty — anything already typed is never overwritten.
   const setIfEmpty=(id,val)=>{ if(val && typeof val==="string" && !v(id)) $(id).value=val.trim(); };
   setIfEmpty("f_name",obj.name);
-  // f_dob is a native date input — only accept a well-formed ISO date, so a
-  // malformed value never gets silently dropped by the input vs. left for
-  // the user to notice was skipped.
-  if(typeof obj.dob==="string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.dob.trim())) setIfEmpty("f_dob",obj.dob);
+  // f_dob is a native date input and needs ISO. UK CVs write "12 March 2008" or
+  // "12/03/2008", so the old ISO-only test rejected almost every real DOB and
+  // said nothing — the field just stayed blank. Normalise the common UK forms,
+  // and when a date IS present but unreadable, report it instead of guessing.
+  if(typeof obj.dob==="string" && obj.dob.trim()){
+    const iso = parseDobToIso(obj.dob.trim());
+    if(iso) setIfEmpty("f_dob", iso);
+    else dobUnparsed = obj.dob.trim();
+  }
   setIfEmpty("f_address",obj.address);
   setIfEmpty("f_email",obj.email); setIfEmpty("f_phone",obj.phone);
   setIfEmpty("f_links",obj.links); setIfEmpty("f_profile",obj.profile);
@@ -2949,6 +2979,7 @@ function applyImport(raw, usedAI=true, upgradeAvailable=false){
     drawJobs();
   }
   render();
+  if(dobUnparsed){ setImportMsg(`Imported \u2713 \u2014 but "${dobUnparsed}" could not be read as a date of birth, so that field was left blank. UK CVs normally leave DOB off anyway.`, true); return; }
   setImportMsg(usedAI
     ? "Imported with Claude AI ✓ — check every field and step; anything you'd already typed was left unchanged."
     : upgradeAvailable
@@ -3242,8 +3273,15 @@ function setPane(p){
   show("healthPanel", p==="health");
   show("tailorPane", p==="tailor");
   show("gapsPanel", p==="review");
+  // interviewPanel lives inside aiWrap, so aiWrap must be visible for it --
+  // which also exposes aiPanel/actionsPanel/searchTermsPanel, whose display was
+  // set by showAIResult and never reset. Hide the CV-pane children explicitly.
   show("aiWrap", p==="cv"||p==="interview");
   show("interviewPanel", p==="interview");
+  const onCV = p==="cv", filled=(id)=>{ const el=$(id); return el && el.innerHTML.trim()!==""; };
+  show("aiPanel", onCV && filled("aiPanel") && !!lastAIResult);
+  show("actionsPanel", onCV && filled("actionsPanel"));
+  show("searchTermsPanel", onCV && filled("searchTermsPanel"));
   if(p==="review" && !$("gapsPanel").innerHTML.trim())
     $("gapsPanel").innerHTML='<div class="card"><h2>🧭 Honest review</h2><p class="hint" style="margin-bottom:0">Fill in a few steps first — this panel lists honest gaps in your CV and three concrete actions to strengthen your next application.</p></div>';
 }
