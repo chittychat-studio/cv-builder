@@ -137,7 +137,8 @@
   <div class="wrap">
     <div class="logo">CV<span>Builder</span></div>
     <div style="display:flex; align-items:center; gap:6px;">
-      <a class="btn ghost" href="#pricing">Pricing</a>
+      <!-- Pricing hidden (D1/D2) -->
+      <a class="btn ghost" href="#pricing" style="display:none">Pricing</a>
       <a class="btn" href="/app">Create my CV</a>
     </div>
   </div>
@@ -145,7 +146,7 @@
 
 <section class="hero">
   <div class="wrap">
-    <div class="badge">Free to build &amp; export · AI upgrade £4.99/month</div>
+    <div class="badge">Free to build, export and use every AI feature · no account needed</div>
     <h1>Build a job-winning CV in minutes — honest, UK-format, school-leaver friendly</h1>
     <p>Fill in five short steps (or import your old CV), watch it build itself live on an A4 page,
        then download it as PDF or a real Word file. Everything you leave blank is simply left out — nothing is ever invented.</p>
@@ -262,7 +263,7 @@
     <div class="tool-grid">
       <div class="tool-card">
         <h3>⚡ Import <span class="tag free">FREE</span></h3>
-        <p>Upload your existing CV (PDF, Word or text) — contact details are filled in automatically, no AI involved. With the AI upgrade, Claude reads the whole CV and fills every step of the form.</p>
+        <p>Upload your existing CV (PDF, Word or text) — contact details are filled in automatically, no AI involved. Claude can also read the whole CV and fill every step of the form.</p>
       </div>
       <div class="tool-card">
         <h3>🎨 Style it <span class="tag free">FREE</span></h3>
@@ -270,7 +271,7 @@
       </div>
       <div class="tool-card">
         <h3>🩺 Score it <span class="tag free">FREE</span></h3>
-        <p>An instant health score showing how an ATS reads your CV, plus the biggest problem to fix — 3 checks a day, no AI. The AI upgrade unlocks the full report: every flag, each with a concrete fix.</p>
+        <p>An instant health score showing how an ATS reads your CV, plus the biggest problem to fix — 3 checks a day, no AI. The full AI report covers every flag, each with a concrete fix.</p>
       </div>
       <div class="tool-card">
         <h3>🎯 Match a job <span class="tag ai">AI</span></h3>
@@ -288,7 +289,10 @@
   </div>
 </section>
 
-<section class="pricing" id="pricing">
+<!-- Hidden (CLAUDE.md D1/D2): everything is free for school leavers. This section
+     stays in place for the paid tier aimed at working professionals -- delete the
+     style attribute here and on the nav link above to bring it back. -->
+<section class="pricing" id="pricing" style="display:none">
   <div class="wrap">
     <h2>Simple, honest pricing</h2>
     <p class="sub">Building and exporting your CV is free forever — no account, no card, no watermarks. One flat subscription unlocks every AI feature.</p>

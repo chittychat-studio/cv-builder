@@ -949,7 +949,7 @@
         <span class="badge-beta" id="betaBadge">Free — no account needed</span>
         <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipExport',event)">i</button>
           <span class="info-pop" id="ipExport"><button class="ip-close" onclick="toggleInfo('ipExport',event)">✕</button>
-          Apply with <b>PDF or Word</b> — that's what recruiters and apprenticeship portals expect. <b>Downloads are snapshots</b>: edits made to the file in Word don't come back to this page — edit here (✏️ Edit this version) and re-download, or re-import your edited Word file in step 1. <b>Generate with AI</b> (part of the £4.99/month AI upgrade) sends your facts to our server for a polished rewrite with strict no-invention rules; nothing is stored.</span>
+          Apply with <b>PDF or Word</b> — that's what recruiters and apprenticeship portals expect. <b>Downloads are snapshots</b>: edits made to the file in Word don't come back to this page — edit here (✏️ Edit this version) and re-download, or re-import your edited Word file in step 1. <b>Generate with AI</b> sends your facts to our server for a polished rewrite with strict no-invention rules; nothing is stored.</span>
         </span>
       </div>
       <span class="copied-flash" id="copiedFlash" aria-live="polite"></span>
@@ -964,7 +964,7 @@
         <h2 style="color:var(--accent)">⚡ Import an existing CV <span class="opt" style="font-weight:400; font-size:.8rem">(PDF, Word or text — import it and skip the typing)</span>
           <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipImport',event)">i</button>
             <span class="info-pop" id="ipImport"><button class="ip-close" onclick="toggleInfo('ipImport',event)">✕</button>
-            <b>Free:</b> your contact details are pulled from the file automatically — no AI involved. <b>With the AI upgrade (£4.99/month):</b> Claude reads the whole CV and fills every step of the form. Either way the file is read in memory and discarded — never stored by us, and nothing is ever invented.</span>
+            <b>Free:</b> your contact details are pulled from the file automatically — no AI involved. <b>With AI:</b> Claude reads the whole CV and fills every step of the form. Either way the file is read in memory and discarded — never stored by us, and nothing is ever invented.</span>
           </span>
         </h2>
         <div class="fill-row" style="margin-top:8px">
@@ -1024,7 +1024,7 @@
         <h2 style="color:var(--accent)">🩺 Score it <span class="opt" style="font-weight:400; font-size:.8rem">(free — see how an ATS reads the CV you've built)</span>
           <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipDiag',event)">i</button>
             <span class="info-pop" id="ipDiag"><button class="ip-close" onclick="toggleInfo('ipDiag',event)">✕</button>
-            Scores <b>the CV you've built in the form</b> — or, if a file is chosen in the ⚡ Import tab, that file instead — the way an applicant tracking system parses it. <b>Free:</b> an instant automatic check (no AI involved) — your score plus the single biggest problem, 3 checks a day. <b>AI upgrade (£4.99/month):</b> Claude reads the whole CV — every flag, each with a concrete fix.</span>
+            Scores <b>the CV you've built in the form</b> — or, if a file is chosen in the ⚡ Import tab, that file instead — the way an applicant tracking system parses it. <b>Free:</b> an instant automatic check (no AI involved) — your score plus the single biggest problem, 3 checks a day. <b>With AI:</b> Claude reads the whole CV — every flag, each with a concrete fix.</span>
           </span>
         </h2>
         <div class="fill-row" style="margin-top:8px">
@@ -1084,7 +1084,7 @@
         <h2>🎤 Mock interview
           <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipIv',event)">i</button>
             <span class="info-pop" id="ipIv" style="font-weight:400"><button class="ip-close" onclick="toggleInfo('ipIv',event)">✕</button>
-            Claude plays the hiring manager for your target role: 6–8 realistic questions, every answer rated out of 10 with feedback, then a summary of what to work on before the real thing. Uses only what you've entered — part of the AI upgrade (£4.99/month).</span>
+            Claude plays the hiring manager for your target role: 6–8 realistic questions, every answer rated out of 10 with feedback, then a summary of what to work on before the real thing. Uses only what you've entered.</span>
           </span>
         </h2>
         <div class="preview-toolbar">
@@ -2888,7 +2888,7 @@ function applyImport(raw, usedAI=true, upgradeAvailable=false){
   setImportMsg(usedAI
     ? "Imported with Claude AI ✓ — check every field and step; anything you'd already typed was left unchanged."
     : upgradeAvailable
-    ? "Free import done ✓ — your contact details were filled from the file. Fill in the rest by hand, or get the AI upgrade (£4.99/month) and Claude will read the whole CV and fill every step."
+    ? "Import done ✓ — your contact details were filled from the file. Fill in the rest by hand, or use ✨ AI import and Claude will read the whole CV and fill every step."
     : "Imported contact details without AI (no API key on the server) — fill in the rest by hand, or configure ANTHROPIC_API_KEY for full AI import.");
 }
 
@@ -3120,7 +3120,7 @@ function renderDiagnosis(data){
     `<b>${esc(f.section||"")}</b> — ${esc(f.problem||"")}<br><span style="opacity:.85">Fix: ${esc(f.fix||"")}</span></li>`
   ).join("");
   const locked = data.locked>0
-    ? `<p class="microhint">🔒 <b>${data.locked} more flag${data.locked>1?"s":""}</b> found${data.ai===false?" by the automatic check":""} — the AI upgrade (£4.99/month) gets Claude to read the whole CV: every flag, each with a concrete fix.` +
+    ? `<p class="microhint">🔒 <b>${data.locked} more flag${data.locked>1?"s":""}</b> found${data.ai===false?" by the automatic check":""} — the ✨ AI report gets Claude to read the whole CV: every flag, each with a concrete fix.` +
       (data.checkoutUrl?` <a href="${esc(data.checkoutUrl)}" target="_blank" rel="noopener">Unlock the full check →</a>`:"") + `</p>`
     : (data.ai===false ? `<p class="microhint">Automatic checks passed — the AI upgrade digs into wording, evidence and role keywords.</p>` : "");
   const p=$("diagnosePanel");
