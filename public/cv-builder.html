@@ -1309,6 +1309,20 @@ function restoreState(){
   editedHtml.ai = typeof eh.ai === "string" ? eh.ai : "";
   aiCVHtml = typeof d.aiCVHtml === "string" ? d.aiCVHtml : "";
   lastAIResult = typeof d.lastAIResult === "string" ? d.lastAIResult : "";
+  // Re-derive the AI view from the saved markdown rather than trusting the
+  // saved HTML. aiCVHtml is rendered output, so every improvement to
+  // parseAICV() (canonical headings, entry heads) would otherwise never reach a
+  // CV that already exists — a student would keep seeing a flag for a heading
+  // the app no longer produces, and "regenerate it" is not a fix we can ask of
+  // them. The markdown is the source of truth; the HTML is a cache.
+  // editedHtml.ai is untouched: that is the student's own edit, not ours to
+  // re-render.
+  if(lastAIResult){
+    try{
+      const rebuilt = parseAICV(lastAIResult);
+      if(rebuilt && rebuilt.trim()) aiCVHtml = rebuilt;
+    }catch(e){ /* keep the saved HTML if the saved markdown no longer parses */ }
+  }
   viewMode = (d.viewMode === "ai" && aiCVHtml) ? "ai" : "form";
   curStep = Math.min(Math.max(+d.step || 0, 0), STEPS.length - 1);
   if(d.interview && Array.isArray(d.interview.transcript)){
