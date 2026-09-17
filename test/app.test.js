@@ -838,7 +838,11 @@ test('diagnose returns the full report for licensed users', async (t) => {
   });
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.equal(data.result.score, 62);
+  // The score is DERIVED from the flags, not taken from the model. The stub
+  // says 62; one high (15) + one medium (7) + one low (3) = 25, so 75. The
+  // model generated its number and its flag list independently and the two
+  // disagreed -- one live run gave 6 flags and 75, the next 5 flags and 65.
+  assert.equal(data.result.score, 75);
   assert.equal(data.result.flags.length, 3);
   assert.equal(data.locked, 0);
 
@@ -1955,4 +1959,28 @@ test('stageFactsLine()/defaultQualLevelForStage() read f_stage and default sensi
   helpers.setField('f_stage', '');
   assert.equal(helpers.stageFactsLine(), 'STAGE: A-levels or college (Year 12–13)');
   assert.equal(helpers.defaultQualLevelForStage(), 'A-level');
+});
+
+// --- the score must be reproducible and monotonic --------------------------
+
+const { scoreFromFlags } = require('../server');
+
+test('the same flags always give the same score', () => {
+  const flags = [{ severity: 'high' }, { severity: 'medium' }, { severity: 'low' }];
+  assert.equal(scoreFromFlags(flags), scoreFromFlags(flags.slice()));
+});
+
+test('clearing a flag can only raise the score — the UI promises exactly this', () => {
+  const before = [{ severity: 'medium' }, { severity: 'medium' }, { severity: 'low' }];
+  const after = before.slice(0, 2);
+  assert.ok(scoreFromFlags(after) > scoreFromFlags(before));
+});
+
+test('a clean CV scores 100 and the score never goes below 0', () => {
+  assert.equal(scoreFromFlags([]), 100);
+  assert.equal(scoreFromFlags(new Array(20).fill({ severity: 'high' })), 0);
+});
+
+test('an unknown severity is treated as medium rather than ignored', () => {
+  assert.equal(scoreFromFlags([{ severity: 'catastrophic' }]), scoreFromFlags([{ severity: 'medium' }]));
 });

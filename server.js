@@ -98,6 +98,22 @@ function createRateLimiter() {
  *                to Lemon Squeezy built from env config
  *   lsFetch    — fetch implementation passed to the default Lemon Squeezy provider
  */
+/**
+ * Derive the health score from the flags the model raised.
+ *
+ * Deterministic on purpose: the same CV scores the same twice, and clearing a
+ * flag always raises the number. Weights are a judgement about how much each
+ * severity costs a candidate, not a measurement -- an ATS does not score CVs at
+ * all (it is a searchable database), so this is a readability heuristic and the
+ * copy around it should not claim more.
+ */
+function scoreFromFlags(flags) {
+  const COST = { high: 15, medium: 7, low: 3 };
+  const penalty = (Array.isArray(flags) ? flags : [])
+    .reduce((n, f) => n + (COST[(f && f.severity) || 'medium'] ?? COST.medium), 0);
+  return Math.max(0, Math.min(100, 100 - penalty));
+}
+
 function createApp(options = {}) {
   const config = {
     // Free by default (CLAUDE.md D1): school leavers never need a licence key.
@@ -513,6 +529,16 @@ function createApp(options = {}) {
         return res.status(502).json({ error: 'CV check failed. Please try again in a moment.' });
       }
       logEvent('diagnose', 200);
+      // The model returns both a score and a flag list, generated independently,
+      // so the two disagreed: one run produced 6 flags and 75, the next 5 flags
+      // and 65 -- fewer problems, lower score. The UI tells students to fix the
+      // flags and watch the score climb, which was not true of a number that
+      // moved on its own.
+      //
+      // The flags stay the model's judgement; the number is now derived from
+      // them, so it is reproducible, always consistent with what is on screen,
+      // and can only improve when a flag is actually cleared.
+      parsed.score = scoreFromFlags(parsed.flags);
       res.json({ result: parsed, locked: 0, ai: true, beta: !!access.beta });
     } catch (err) {
       if (handleModelError(err, res, 'diagnose')) return;
@@ -1097,7 +1123,7 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, cacheRoleCorpus };
+module.exports = { createApp, cacheRoleCorpus, scoreFromFlags };
 
 if (require.main === module) {
   require('dotenv').config();
