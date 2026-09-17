@@ -32,3 +32,22 @@ test('the prompt clears Groq\'s minimum cacheable prefix', () => {
   assert.ok(approxTokens > 1024,
     `system prompt is ~${Math.round(approxTokens)} tokens; needs >1024 to cache on any Groq model`);
 });
+
+// --- the diagnose prompt must not recommend what the generator forbids ------
+
+const { DIAGNOSE_PROMPT } = require('../lib/anthropic');
+
+test('no fix may require stating something the CV does not evidence', () => {
+  assert.match(DIAGNOSE_PROMPT, /NO FIX MAY REQUIRE THE CANDIDATE TO STATE SOMETHING THE CV DOES NOT/);
+  assert.match(DIAGNOSE_PROMPT, /telling them to lie/);
+});
+
+test('keyword fixes are bounded to rewording or an earned gap', () => {
+  assert.match(DIAGNOSE_PROMPT, /a rewording/);
+  assert.match(DIAGNOSE_PROMPT, /an earned gap/);
+});
+
+test('the score cannot be reachable by overstating', () => {
+  assert.match(DIAGNOSE_PROMPT, /never be reachable by writing something untrue/);
+  assert.match(DIAGNOSE_PROMPT, /Never suggest inventing or estimating a date, figure, grade or employer/);
+});
