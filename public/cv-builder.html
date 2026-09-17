@@ -2012,10 +2012,27 @@ function renderGaps(){
 /* ================= export: CV as plain text / AI facts ================= */
 function cvAsText(){
   const tmp=document.createElement("div"); tmp.innerHTML=$("cv").innerHTML;
-  tmp.querySelectorAll("h3").forEach(h=>h.textContent="\n"+h.textContent.toUpperCase()+"\n");
-  tmp.querySelectorAll("li").forEach(li=>li.textContent="• "+li.textContent+"\n");
-  tmp.querySelectorAll("div,p").forEach(d=>{ if(d.textContent.trim()) d.textContent=d.textContent+"\n"; });
-  return tmp.textContent.replace(/\n{3,}/g,"\n\n").trim();
+  // Separators are inserted as TEXT NODES around each block, never by rewriting
+  // textContent. Setting textContent on an element deletes its children, so the
+  // old version flattened .cv-sec-block before its nested .cv-entry /
+  // .cv-entry-head could add their own breaks -- adjacent blocks ran together
+  // ("ProfileSchool", "Microsoft ExcelProbabilities") and the health check then
+  // flagged those as CV defects the model never wrote.
+  const nl = ()=>document.createTextNode("\n");
+  tmp.querySelectorAll("h3").forEach(h=>{
+    h.textContent = h.textContent.toUpperCase();
+    h.before(nl()); h.after(nl());
+  });
+  tmp.querySelectorAll("li").forEach(li=>{ li.before(document.createTextNode("• ")); li.after(nl()); });
+  // Inline spans (contact details, dates) need a visible separator, not a break.
+  tmp.querySelectorAll("span").forEach(sp=>{ sp.after(document.createTextNode(" · ")); });
+  tmp.querySelectorAll("div,p").forEach(d=>{ d.after(nl()); });
+  return tmp.textContent
+    .replace(/[ \t]*·[ \t]*(?=\n|$)/g,"")   // drop a trailing separator at a line end
+    .replace(/[ \t]{2,}/g," ")
+    .replace(/[ \t]+\n/g,"\n")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
 }
 function buildPrompt(){
   const facts = {
