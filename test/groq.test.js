@@ -88,3 +88,60 @@ test('an HTTP error throws with status only — no response body in the message'
     (e) => e.status === 429 && !/quota exceeded/.test(e.message)
   );
 });
+
+// --- model aliasing and fallback ------------------------------------------
+
+function seqFetch(replies, seen) {
+  let i = 0;
+  return async (url, init) => {
+    seen.push(JSON.parse(init.body).model);
+    const r = replies[i++];
+    if (r.status) return { ok: false, status: r.status, text: async () => r.text };
+    return { ok: true, json: async () => r.json };
+  };
+}
+
+const okReply2 = { choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] };
+
+test('a decommissioned model falls back to the secondary model', async () => {
+  const seen = [];
+  const client = createGroqClient('k', {
+    fetchImpl: seqFetch(
+      [{ status: 404, text: '{"error":{"message":"The model `openai/gpt-oss-20b` does not exist"}}' },
+       { json: okReply2 }],
+      seen
+    ),
+  });
+  const r = await client.messages.create({ max_tokens: 10, system: 'S', messages: [] });
+  assert.equal(r.content[0].text, 'OK');
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0], seen[1], 'must retry on a different model');
+});
+
+test('a rate limit does NOT fall back — it would burn a second quota and hide the limit', async () => {
+  const seen = [];
+  const client = createGroqClient('k', {
+    fetchImpl: seqFetch([{ status: 429, text: 'rate limit reached' }, { json: okReply2 }], seen),
+  });
+  await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }),
+    (e) => e.status === 429);
+  assert.equal(seen.length, 1, 'must not retry on 429');
+});
+
+test('a provider 5xx does not fall back either', async () => {
+  const seen = [];
+  const client = createGroqClient('k', {
+    fetchImpl: seqFetch([{ status: 503, text: 'upstream unavailable' }, { json: okReply2 }], seen),
+  });
+  await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
+  assert.equal(seen.length, 1);
+});
+
+test('a non-model 400 does not fall back', async () => {
+  const seen = [];
+  const client = createGroqClient('k', {
+    fetchImpl: seqFetch([{ status: 400, text: 'invalid temperature' }, { json: okReply2 }], seen),
+  });
+  await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
+  assert.equal(seen.length, 1);
+});
