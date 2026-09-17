@@ -5,6 +5,7 @@ const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const { createGroqClient } = require('./lib/groq');
 const { createAnthropicClient, generateCV, suggestIdeas, polishEntry, extractCV, tailorToJob, diagnoseCV, keywordGapExtract, keywordGapDiff, interviewTurn, ModelRefusalError, ModelTruncatedError } = require('./lib/anthropic');
 const { createLicensing } = require('./lib/licensing');
 const { createLemonSqueezyProvider } = require('./lib/providers/lemonsqueezy');
@@ -156,11 +157,19 @@ function createApp(options = {}) {
   // without driving 500+ distinct roles through the route.
   const KEYWORD_GAP_CACHE_MAX = options.keywordGapCacheMax ?? 500;
 
+  // Model client. GROQ_API_KEY wins when set (free tier); ANTHROPIC_API_KEY is
+  // the fallback. The Groq client presents the same messages.create() shape, so
+  // every route and prompt below is unchanged.
   let anthropic = options.anthropic || null;
   function getAnthropic() {
     if (!anthropic) {
-      if (!process.env.ANTHROPIC_API_KEY) return null;
-      anthropic = createAnthropicClient(process.env.ANTHROPIC_API_KEY);
+      if (process.env.GROQ_API_KEY) {
+        anthropic = createGroqClient(process.env.GROQ_API_KEY);
+      } else if (process.env.ANTHROPIC_API_KEY) {
+        anthropic = createAnthropicClient(process.env.ANTHROPIC_API_KEY);
+      } else {
+        return null;
+      }
     }
     return anthropic;
   }
