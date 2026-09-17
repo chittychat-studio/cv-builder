@@ -112,6 +112,12 @@ function createApp(options = {}) {
     // Monthly cap on top of the hourly rate limit, to bound worst-case spend.
     // Rolling 30-day window, checked per licence key (or per IP in beta mode).
     monthlyAiLimit: options.monthlyAiLimit ?? (Number(process.env.MONTHLY_AI_LIMIT) || 300),
+    // TOKENS are the binding free-tier resource, not requests. Measured: ~3,100
+    // tokens per call against Groq's 200,000/day for gpt-oss-20b -- about 64
+    // calls a day site-wide, while the request cap (1,000/day) never binds. A
+    // budget counted in calls would guard the wrong thing entirely.
+    // Default leaves ~10% headroom under 200,000.
+    dailyTokenBudget: options.dailyTokenBudget ?? (Number(process.env.AI_DAILY_TOKEN_BUDGET) || 180000),
     betaMonthlyAiLimit: options.betaMonthlyAiLimit ?? 100,
     // Unlicensed ATS checks per IP per day (each spends one model call).
     freeDiagnoseLimit: options.freeDiagnoseLimit ?? 3,
@@ -211,6 +217,32 @@ function createApp(options = {}) {
     return false;
   }
 
+  /**
+   * Site-wide daily token budget (D5: fail closed, with a stated reason).
+   *
+   * Checked against tokens we have actually spent in a rolling 24h window,
+   * because Groq's remaining-token header does not say which window it
+   * describes. Only the Groq client keeps this ledger; with any other provider
+   * the check is skipped rather than guessed at.
+   *
+   * Refuses BEFORE spending, so the budget is a ceiling rather than a
+   * post-mortem. Returns true when the request was refused.
+   */
+  function overTokenBudget(res, route) {
+    const client = anthropic;
+    if (!client || typeof client.tokensUsedLast24h !== 'function') return false;
+    const used = client.tokensUsedLast24h();
+    if (used < config.dailyTokenBudget) return false;
+    logEvent(route, 429, `token-budget used=${used}/${config.dailyTokenBudget}`);
+    res.status(429).json({
+      error: "AI writing help has used up today's allowance for everyone on the site. "
+           + 'Your CV is complete and you can download it as PDF or Word right now — '
+           + 'writing help comes back within 24 hours.',
+      scope: 'site-daily-tokens',
+    });
+    return true;
+  }
+
   // Shared gate for AI routes: license check + rate limit (one hourly bucket
   // covers generations AND suggestions). Sends the error response and returns
   // null when the request is refused.
@@ -221,6 +253,7 @@ function createApp(options = {}) {
       res.status(402).json({ error: access.error, checkoutUrl: config.checkoutUrl });
       return null;
     }
+    if (overTokenBudget(res, route)) return null;
     const bucket = access.beta ? `ip:${req.ip}` : `key:${access.licenseKey}`;
     const limit = access.beta ? config.betaRateLimit : config.paidRateLimit;
     if (!rateLimiter.allow(bucket, limit)) {
@@ -520,7 +553,13 @@ function createApp(options = {}) {
     if (!client || typeof client.limits !== 'function') {
       return res.json({ provider: client ? 'anthropic' : 'none', tracked: false });
     }
-    res.json({ provider: 'groq', tracked: true, ...client.limits() });
+    const l = client.limits();
+    res.json({
+      provider: 'groq', tracked: true,
+      dailyTokenBudget: config.dailyTokenBudget,
+      tokensLeftToday: Math.max(0, config.dailyTokenBudget - l.tokensUsedLast24h),
+      ...l,
+    });
   });
 
   // Role keyword gap: pulls a corpus of real ingested job adverts for the
@@ -684,8 +723,13 @@ function createApp(options = {}) {
         (m) =>
           m && (m.role === 'assistant' || m.role === 'user') && typeof m.content === 'string' && m.content.trim()
       )
-      .slice(-40)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }));
+      // Every interview turn resends the whole transcript, so these two slices
+      // are the biggest token lever in the app. 40 turns x 8,000 chars was up
+      // to ~80k tokens of history on a late turn -- a third of the entire
+      // site's daily allowance for one student's one question. 12 turns is
+      // still the whole of a 6-8 question interview.
+      .slice(-12)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 1200) }));
 
     const access = await licensing.checkAccess(req);
     if (!access.allowed) {
@@ -717,7 +761,10 @@ function createApp(options = {}) {
     try {
       const raw = await interviewTurn(client, {
         role: role.slice(0, 200),
-        advert: typeof advert === 'string' ? advert.slice(0, 20000) : '',
+        // 20,000 chars of advert is ~5,000 tokens resent on EVERY turn. 4,000
+        // chars covers the role, requirements and responsibilities of a real
+        // advert; the boilerplate below that adds cost and no questions.
+        advert: typeof advert === 'string' ? advert.slice(0, 4000) : '',
         facts: facts.slice(0, 20000),
         transcript: turns,
       });

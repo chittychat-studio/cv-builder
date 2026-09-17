@@ -2025,6 +2025,11 @@ function cvAsText(){
   });
   tmp.querySelectorAll("li").forEach(li=>{ li.before(document.createTextNode("• ")); li.after(nl()); });
   // Inline spans (contact details, dates) need a visible separator, not a break.
+  // The dates span sits immediately after the bold title inside .cv-entry-head,
+  // so it needs a separator BEFORE it too — without one the title and dates ran
+  // together ("…Swansea2019 - 2026") and the health check reported it as a
+  // missing comma in the CV.
+  tmp.querySelectorAll(".cv-entry-head .dates").forEach(sp=>{ sp.before(document.createTextNode(" — ")); });
   tmp.querySelectorAll("span").forEach(sp=>{ sp.after(document.createTextNode(" · ")); });
   tmp.querySelectorAll("div,p").forEach(d=>{ d.after(nl()); });
   return tmp.textContent
