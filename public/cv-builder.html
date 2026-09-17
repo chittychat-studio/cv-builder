@@ -3205,7 +3205,12 @@ async function diagnoseAI(){
   const orig=btn.textContent;
   btn.textContent="⏳ Checking…";
   try{
-    // Score the chosen file if there is one; otherwise the CV built so far.
+    // Score the chosen file if there is one; otherwise whatever the preview is
+    // currently showing. #cv holds the form version or the AI version depending
+    // on the view toggle, so the score changes meaning with it — say which,
+    // rather than leaving the student to guess.
+    const scoring = $("f_cvfile").files[0] ? "the file you chose"
+      : (viewMode === "ai" && aiCVHtml) ? "the ✨ AI version" : "the version built from your form";
     let text="";
     const f=$("f_cvfile").files[0];
     if(f){
@@ -3217,7 +3222,12 @@ async function diagnoseAI(){
       if(!ex.ok){ setDiagnoseMsg(exData.error||"Couldn't read that file.", true); return; }
       text = exData.text||"";
     } else {
-      text = $("cv").innerText||"";
+      // cvAsText(), not innerText. #cv renders .cv-entry-head as a flex row, so
+      // innerText returned the bold title and the dates span with nothing
+      // between them ("…Swansea2019-2026") and the health check reported that
+      // as a missing comma in the CV. cvAsText() inserts explicit separators.
+      // (It existed for exactly this and was never wired up.)
+      text = cvAsText();
     }
     if(text.trim().length < 80){
       setDiagnoseMsg("Not enough CV to check yet — choose a file above, or fill in a few steps first.", true);
@@ -3236,7 +3246,7 @@ async function diagnoseAI(){
     if(!resp.ok){ setDiagnoseMsg(data.error||"CV check failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
     renderDiagnosis(data);
-    setDiagnoseMsg("");
+    setDiagnoseMsg("Scored " + scoring + ".");
   } finally {
     btn.disabled=false;
     btn.textContent=orig;
