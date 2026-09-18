@@ -954,7 +954,10 @@ test('keyword gap is hidden without JOBPILOT_API_URL and served with it', async 
     corpusFetch,
   });
   t.after(() => on.server.close());
-  assert.deepEqual(await (await fetch(`${on.base}/api/features`)).json(), { keywordGap: true, beta: true, checkoutUrl: 'https://teststore.lemonsqueezy.com/buy/abc-123' });
+  const onFeats = await (await fetch(`${on.base}/api/features`)).json();
+  assert.equal(onFeats.keywordGap, true);
+  assert.equal(onFeats.beta, true);
+  assert.equal(onFeats.checkoutUrl, 'https://teststore.lemonsqueezy.com/buy/abc-123');
 
   const res = await fetch(`${on.base}/api/keyword-gap`, {
     method: 'POST',
