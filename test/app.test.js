@@ -2042,3 +2042,28 @@ test('the same CV scores the same twice even when the model varies its flags', a
   // The remaining movement is only the model's extra flag, bounded to 3.
   assert.ok(Math.abs(a.result.score - b.result.score) <= 9);
 });
+
+// --- visible allowance -----------------------------------------------------
+
+test('every AI response reports what this visitor has left', async (t) => {
+  const { server, base } = await startApp({ betaMode: true, betaRateLimit: 4 });
+  t.after(() => server.close());
+
+  const first = await (await postGenerate(base)).json();
+  assert.equal(first.allowance.hourLimit, 4);
+  assert.equal(first.allowance.hourLeft, 3, 'one of four consumed');
+
+  const second = await (await postGenerate(base)).json();
+  assert.equal(second.allowance.hourLeft, 2, 'the count must fall as they are used');
+  assert.ok(second.allowance.hourResetsInMs > 0, 'a reset time so the student is told when');
+});
+
+test('the allowance is per visitor, not the site total', async (t) => {
+  const { server, base } = await startApp({ betaMode: true, betaRateLimit: 4 });
+  t.after(() => server.close());
+
+  await postGenerate(base, { 'X-Forwarded-For': '203.0.113.1' });
+  await postGenerate(base, { 'X-Forwarded-For': '203.0.113.1' });
+  const other = await (await postGenerate(base, { 'X-Forwarded-For': '198.51.100.7' })).json();
+  assert.equal(other.allowance.hourLeft, 3, "another visitor's usage must not reduce this one's");
+});

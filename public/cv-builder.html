@@ -277,6 +277,10 @@
     border-radius:20px; padding:3px 11px; font-size:.72rem; font-weight:700; white-space:nowrap;
   }
   .badge-beta.show{display:inline-block;}
+  .ai-left{display:none; font-size:.78rem; color:var(--ink-faint); align-self:center;}
+  .ai-left.show{display:inline-block;}
+  .ai-left b{color:var(--ink); font-weight:700;}
+  .ai-left.low b{color:var(--warn);}
 
   /* ---------- Form / AI preview toggle ---------- */
   .view-toggle{max-width:760px; margin:0 auto 12px; display:flex;}
@@ -955,6 +959,7 @@
         <button class="btn green big" onclick="exportWord()">⬇ Download Word</button>
         <button class="btn" id="btnAI" onclick="generateAI()">✨ Generate with AI</button>
         <span class="badge-beta" id="betaBadge">Free — no account needed</span>
+        <span class="ai-left" id="aiLeft" aria-live="polite"></span>
         <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipExport',event)">i</button>
           <span class="info-pop" id="ipExport"><button class="ip-close" onclick="toggleInfo('ipExport',event)">✕</button>
           Apply with <b>PDF or Word</b> — that's what recruiters and apprenticeship portals expect. <b>Downloads are snapshots</b>: edits made to the file in Word don't come back to this page — edit here (✏️ Edit this version) and re-download, or re-import your edited Word file in step 1. <b>Generate with AI</b> sends your facts to our server for a polished rewrite with strict no-invention rules; nothing is stored.</span>
@@ -2571,6 +2576,20 @@ async function fetchTimeout(url, opts, ms){
 }
 function isAbort(err){ return err && err.name === "AbortError"; }
 
+/* Every AI response carries what THIS visitor has left. Shown per-visitor, not
+   as the site's remaining budget: a student can act on their own allowance and
+   can do nothing about everyone else's. */
+function showAllowance(a){
+  if(!a || typeof a.hourLeft !== "number") return;
+  const el=$("aiLeft"); if(!el) return;
+  const mins = a.hourResetsInMs ? Math.ceil(a.hourResetsInMs/60000) : 0;
+  el.innerHTML = a.hourLeft > 0
+    ? `<b>${a.hourLeft}</b> of ${a.hourLimit} AI uses left this hour`
+    : `No AI uses left this hour${mins?` — resets in about ${mins} min`:""}`;
+  el.classList.toggle("low", a.hourLeft <= 2);
+  el.classList.add("show");
+}
+
 function showAIMessage(msg, isErr){
   $("aiPanel").style.display="block";
   $("aiOutput").style.display="none";
@@ -2722,6 +2741,7 @@ async function generateAI(){
     if(resp.status===429){ showAIMessage(data.error||"Rate limit reached — please try again in an hour.", true); return; }
     if(!resp.ok){ showAIMessage(data.error||"Generation failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     showAIResult(data.result||"");
   } finally {
     btn.disabled=false;
@@ -2769,6 +2789,7 @@ async function suggestAI(){
       return;
     }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     const bullets = (data.result||"").split(/\r?\n/).map(s=>s.trim())
       .filter(s=>/^[-*•]\s+/.test(s)).map(s=>s.replace(/^[-*•]\s+/,""));
     const items = bullets.length ? bullets : (data.result||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -2865,6 +2886,7 @@ async function tailorAI(){
     }
     if(!resp.ok){ setTailorMsg(data.error||"Tailoring failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     applyTailor(data.result||"");
   } finally {
     btn.disabled=false;
@@ -2936,6 +2958,7 @@ async function importCV(){
     }
     if(!resp.ok){ setImportMsg(data.error||"Import failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     applyImport(data.result||"", data.ai !== false, !!data.upgrade);
   } finally {
     btn.disabled=false;
@@ -3060,6 +3083,7 @@ async function polishAI(step){
       return;
     }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     applyPolished(cat, data.result||"");
     $("f_filltext"+step).value="";
     setFillMsg(step, "Added ✓ — check the entry and replace any [bracketed] parts with your real details.");
@@ -3265,6 +3289,7 @@ async function diagnoseAI(){
       return;
     }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     // One result surface for both entry points: the popup. The Score it pane
     // keeps its button (and is still the only way to score an imported file
     // without importing it first), but its findings open in the same window
@@ -3468,6 +3493,7 @@ async function keywordGapAI(){
     }
     if(!resp.ok){ setKwGapMsg(data.error||"Role insight failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     renderKeywordGap(data);
     setKwGapMsg("");
   } finally {
@@ -3555,6 +3581,7 @@ async function callInterview(){
     }
     if(!resp.ok){ setIvMsg(data.error||"The interviewer lost their train of thought — please try again.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
+    showAllowance(data.allowance);
     const r=data.result;
     if(!r || typeof r !== "object"){
       setIvMsg("The interviewer sent back something unreadable — please try again.", true);

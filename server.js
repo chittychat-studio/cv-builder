@@ -103,6 +103,19 @@ function createRateLimiter() {
       hits.set(key, recent);
       return true;
     },
+    /** How many are left in this window, without consuming one. */
+    remaining(key, limit, windowMs = HOUR_MS) {
+      const now = Date.now();
+      const recent = (hits.get(key) || []).filter((t) => now - t < windowMs);
+      return Math.max(0, limit - recent.length);
+    },
+    /** Ms until the oldest hit in this window expires, so a student can be told when. */
+    resetsInMs(key, windowMs = HOUR_MS) {
+      const now = Date.now();
+      const recent = (hits.get(key) || []).filter((t) => now - t < windowMs);
+      if (!recent.length) return 0;
+      return Math.max(0, windowMs - (now - Math.min(...recent)));
+    },
   };
 }
 
@@ -303,6 +316,26 @@ function createApp(options = {}) {
     return access;
   }
 
+  /**
+   * What THIS visitor has left, for display. Deliberately per-visitor, not the
+   * site-wide token budget: a student can act on their own allowance, cannot
+   * act on everyone else's, and a global number at launch traffic mostly
+   * advertises how quiet the site is. The site-wide case surfaces only when it
+   * actually bites, in the 429 message.
+   */
+  function allowanceFor(access, req) {
+    const who = access.beta ? `ip:${req.ip}` : `key:${access.licenseKey}`;
+    const hourLimit = access.beta ? config.betaRateLimit : config.paidRateLimit;
+    const monthLimit = access.beta ? config.betaMonthlyAiLimit : config.monthlyAiLimit;
+    return {
+      hourLeft: rateLimiter.remaining(who, hourLimit),
+      hourLimit,
+      hourResetsInMs: rateLimiter.resetsInMs(who),
+      monthLeft: rateLimiter.remaining(`monthly:${who}`, monthLimit, MONTH_MS),
+      monthLimit,
+    };
+  }
+
   app.post('/api/generate-cv', express.json({ limit: '200kb' }), async (req, res) => {
     const access = await gateAIRequest(req, res, 'generate-cv');
     if (!access) return;
@@ -322,7 +355,7 @@ function createApp(options = {}) {
     try {
       const result = await generateCV(client, facts.slice(0, 20000));
       logEvent('generate-cv', 200);
-      res.json({ result, beta: !!access.beta });
+      res.json({ result, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       // Log the error type/status only — never the facts or the model output.
       if (handleModelError(err, res, 'generate-cv')) return;
@@ -351,7 +384,7 @@ function createApp(options = {}) {
     try {
       const result = await tailorToJob(client, { job: job.slice(0, 20000), facts: facts.slice(0, 20000) });
       logEvent('tailor', 200);
-      res.json({ result, beta: !!access.beta });
+      res.json({ result, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'tailor')) return;
       logError('tailor', err);
@@ -379,7 +412,7 @@ function createApp(options = {}) {
     try {
       const result = await suggestIdeas(client, context.slice(0, 20000));
       logEvent('suggest', 200);
-      res.json({ result, beta: !!access.beta });
+      res.json({ result, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'suggest')) return;
       logError('suggest', err);
@@ -418,7 +451,7 @@ function createApp(options = {}) {
         target: typeof target === 'string' ? target : '',
       });
       logEvent('polish', 200);
-      res.json({ result, beta: !!access.beta });
+      res.json({ result, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'polish')) return;
       logError('polish', err);
@@ -590,7 +623,7 @@ function createApp(options = {}) {
       });
       parsed.flags = [...rules.flags, ...extra];
       parsed.score = scoreFromFlags(parsed.flags);
-      res.json({ result: parsed, locked: 0, ai: true, beta: !!access.beta });
+      res.json({ result: parsed, locked: 0, ai: true, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'diagnose')) return;
       logError('diagnose', err);
@@ -863,7 +896,7 @@ function createApp(options = {}) {
         return res.status(502).json({ error: 'The interviewer lost their train of thought. Please try again.' });
       }
       logEvent('interview', 200);
-      res.json({ result: parsed, beta: !!access.beta });
+      res.json({ result: parsed, beta: !!access.beta, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'interview')) return;
       logError('interview', err);
@@ -1064,7 +1097,7 @@ function createApp(options = {}) {
         // non-JSON model output: hand it to the client's tolerant parser as-is
       }
       logEvent('import-cv', 200);
-      res.json({ result, beta: !!access.beta, ai: true });
+      res.json({ result, beta: !!access.beta, ai: true, allowance: allowanceFor(access, req) });
     } catch (err) {
       if (handleModelError(err, res, 'import-cv')) return;
       logError('import-cv', err);
