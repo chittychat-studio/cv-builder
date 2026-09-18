@@ -917,7 +917,12 @@ test('keyword gap is hidden without JOBPILOT_API_URL and served with it', async 
   // Standalone deploy: feature flag off, route unavailable
   const bare = await startApp({ betaMode: true });
   t.after(() => bare.server.close());
-  assert.deepEqual(await (await fetch(`${bare.base}/api/features`)).json(), { keywordGap: false, beta: true, checkoutUrl: 'https://teststore.lemonsqueezy.com/buy/abc-123' });
+  // Assert the fields this test is about, not the whole payload: a deepEqual
+  // here breaks every time an unrelated field (the AI allowance, say) is added.
+  const bareFeats = await (await fetch(`${bare.base}/api/features`)).json();
+  assert.equal(bareFeats.keywordGap, false);
+  assert.equal(bareFeats.beta, true);
+  assert.equal(bareFeats.checkoutUrl, 'https://teststore.lemonsqueezy.com/buy/abc-123');
   const off = await fetch(`${bare.base}/api/keyword-gap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2066,4 +2071,17 @@ test('the allowance is per visitor, not the site total', async (t) => {
   await postGenerate(base, { 'X-Forwarded-For': '203.0.113.1' });
   const other = await (await postGenerate(base, { 'X-Forwarded-For': '198.51.100.7' })).json();
   assert.equal(other.allowance.hourLeft, 3, "another visitor's usage must not reduce this one's");
+});
+
+test('/api/features reports the allowance so it can be shown before any AI call', async (t) => {
+  const { server, base } = await startApp({ betaMode: true, betaRateLimit: 10 });
+  t.after(() => server.close());
+
+  const feats = await (await fetch(`${base}/api/features`)).json();
+  assert.equal(feats.allowance.hourLeft, 10, 'full allowance before anything is used');
+  assert.equal(feats.allowance.hourLimit, 10);
+
+  await postGenerate(base);
+  const after = await (await fetch(`${base}/api/features`)).json();
+  assert.equal(after.allowance.hourLeft, 9, 'reading it must not consume one, but using one must show');
 });

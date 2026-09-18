@@ -634,8 +634,17 @@ function createApp(options = {}) {
 
   // Feature discovery: the front end asks what optional features this deploy
   // has. Ungated and free — it reveals configuration, never data.
-  app.get('/api/features', (req, res) => {
+  app.get('/api/features', async (req, res) => {
+    // Include the caller's AI allowance so the page can show it from load,
+    // rather than only after their first AI call. checkAccess is read-only and
+    // allowanceFor does not consume a slot, so asking costs nothing.
+    let allowance = null;
+    try {
+      const access = await licensing.checkAccess(req);
+      if (access.allowed) allowance = allowanceFor(access, req);
+    } catch { /* features must never fail because of the allowance lookup */ }
     res.json({
+      allowance,
       keywordGap: !!config.jobpilotApiUrl,
       // Lets the front end grey out (lock) AI buttons for unlicensed visitors
       // when AI is paid-only, and link them straight to checkout.

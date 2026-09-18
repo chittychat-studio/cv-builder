@@ -933,6 +933,7 @@
         <button class="vt-btn active" id="vtForm" onclick="setView('form')">Form version</button>
         <button class="vt-btn" id="vtAI" onclick="setView('ai')" disabled title="Generate with AI, then click 'Use this version'">AI version</button>
       </div>
+      <span class="ai-left" id="aiLeft" aria-live="polite"></span>
       <div class="edit-bar" id="editBar"></div>
     </div>
     <div class="a4" id="cv"></div>
@@ -959,7 +960,6 @@
         <button class="btn green big" onclick="exportWord()">⬇ Download Word</button>
         <button class="btn" id="btnAI" onclick="generateAI()">✨ Generate with AI</button>
         <span class="badge-beta" id="betaBadge">Free — no account needed</span>
-        <span class="ai-left" id="aiLeft" aria-live="polite"></span>
         <span class="info-wrap"><button type="button" class="info-btn" onclick="toggleInfo('ipExport',event)">i</button>
           <span class="info-pop" id="ipExport"><button class="ip-close" onclick="toggleInfo('ipExport',event)">✕</button>
           Apply with <b>PDF or Word</b> — that's what recruiters and apprenticeship portals expect. <b>Downloads are snapshots</b>: edits made to the file in Word don't come back to this page — edit here (✏️ Edit this version) and re-download, or re-import your edited Word file in step 1. <b>Generate with AI</b> sends your facts to our server for a polished rewrite with strict no-invention rules; nothing is stored.</span>
@@ -3626,6 +3626,7 @@ async function initExtras(){
   try{
     const resp = await fetchTimeout("/api/features");
     const feats = await resp.json();
+    if(feats && feats.allowance) showAllowance(feats.allowance);
     if(feats && feats.keywordGap) $("kwgapField").style.display="block";
     if(feats){
       serverCheckoutUrl = feats.checkoutUrl || "";
