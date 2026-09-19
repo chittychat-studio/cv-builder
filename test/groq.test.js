@@ -286,3 +286,54 @@ test('a 429 does not trigger the model fallback', async () => {
   await assert.rejects(() => client.messages.create({ max_tokens: 10, system: 'S', messages: [] }));
   assert.equal(seen.length, 1);
 });
+
+test('a schema rejection retries once as plain text instead of failing the turn', async () => {
+  const bodies = [];
+  const client = createGroqClient('k', {
+    fetchImpl: async (_url, opts) => {
+      bodies.push(JSON.parse(opts.body));
+      if (bodies.length === 1) {
+        return {
+          ok: false, status: 400, headers: hdrs({}),
+          text: async () => JSON.stringify({
+            error: { message: "'response_format.json_schema.schema' : root must be an object" },
+          }),
+        };
+      }
+      return {
+        ok: true, headers: hdrs({}),
+        json: async () => ({
+          choices: [{ message: { content: '{"done":false}' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+      };
+    },
+  });
+
+  const out = await client.messages.create({
+    max_tokens: 50,
+    system: 'S',
+    messages: [{ role: 'user', content: 'hi' }],
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: { anyOf: [] } } },
+  });
+
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies[0].response_format, 'first attempt sends the schema');
+  assert.equal(bodies[1].response_format, undefined, 'retry drops it');
+  assert.equal(out.content[0].text, '{"done":false}');
+});
+
+test('a 400 that is not about the schema is not retried', async () => {
+  let calls = 0;
+  const client = createGroqClient('k', {
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 400, headers: hdrs({}), text: async () => 'bad request' };
+    },
+  });
+  await assert.rejects(() => client.messages.create({
+    max_tokens: 50, system: 'S', messages: [],
+    output_config: { format: { type: 'json_schema', schema: {} } },
+  }));
+  assert.equal(calls, 1);
+});

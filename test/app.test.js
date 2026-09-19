@@ -1102,7 +1102,7 @@ test('interview has its own buckets: generations unaffected, sessions capped per
   // …but a third new session the same day is refused.
   const third = await postInterview();
   assert.equal(third.status, 429);
-  assert.match((await third.json()).error, /come back tomorrow/i);
+  assert.match((await third.json()).error, /daily limit of \d+ practice interviews reached/i);
 
   // None of that touched the generation bucket (limit 2, still fully available)
   assert.equal((await postGenerate(base)).status, 200);
@@ -1593,7 +1593,17 @@ test('tailor, diagnose, keyword-gap (both calls) and interview requests include 
 
   assert.equal(interviewParams.model, 'claude-sonnet-5');
   assert.equal(interviewParams.output_config.effort, 'low');
-  assert.ok(Array.isArray(interviewParams.output_config.format.schema.anyOf), 'interview schema is a discriminated union');
+  // Flat root object, NOT a root-level anyOf: Groq implements the OpenAI
+  // strict-schema contract, where the root must be a plain object. A root
+  // union is rejected outright and every interview turn fails.
+  const ivSchema = interviewParams.output_config.format.schema;
+  assert.equal(ivSchema.type, 'object', 'interview schema root must be an object');
+  assert.equal(ivSchema.anyOf, undefined, 'interview schema must not union at the root');
+  assert.deepEqual(
+    ivSchema.required.slice().sort(),
+    ['done', 'feedback', 'next_question', 'rating', 'summary']
+  );
+  assert.equal(ivSchema.additionalProperties, false);
 });
 
 // --- Peer-review follow-ups (REVIEW-1.md): keyword-gap cache eviction bug,

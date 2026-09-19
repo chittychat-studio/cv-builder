@@ -293,7 +293,11 @@ function createApp(options = {}) {
     const limit = access.beta ? config.betaMonthlyAiLimit : config.monthlyAiLimit;
     if (!rateLimiter.allow(bucket, limit, MONTH_MS)) {
       logEvent(route, 429);
-      res.status(429).json({ error: "You've reached this month's AI limit." });
+      res.status(429).json({
+        error: "You've reached this month's AI limit.",
+        retryAfterMs: rateLimiter.resetsInMs(bucket, MONTH_MS),
+        scope: 'visitor-monthly',
+      });
       return true;
     }
     return false;
@@ -340,8 +344,12 @@ function createApp(options = {}) {
     const limit = access.beta ? config.betaRateLimit : config.paidRateLimit;
     if (!rateLimiter.allow(bucket, limit)) {
       logEvent(route, 429);
+      // retryAfterMs so the front end can run a live countdown rather than
+      // leaving the student guessing what "later" means.
       res.status(429).json({
-        error: `Rate limit reached (${limit} generations per hour). Please try again later.`,
+        error: `Rate limit reached (${limit} AI uses per hour).`,
+        retryAfterMs: rateLimiter.resetsInMs(bucket),
+        scope: 'visitor-hourly',
         beta: !!access.beta,
       });
       return null;
@@ -915,14 +923,18 @@ function createApp(options = {}) {
     if (!rateLimiter.allow(`interview:${who}`, hourly)) {
       logEvent('interview', 429);
       return res.status(429).json({
-        error: 'Interview practice is rate limited for the moment — please continue in a little while.',
+        error: 'Interview practice is rate limited for the moment.',
+        retryAfterMs: rateLimiter.resetsInMs(`interview:${who}`),
+        scope: 'interview-hourly',
         beta: !!access.beta,
       });
     }
     if (turns.length === 0 && !rateLimiter.allow(`interviewday:${who}`, config.interviewDailyLimit, DAY_MS)) {
       logEvent('interview', 429);
       return res.status(429).json({
-        error: `Daily limit of ${config.interviewDailyLimit} practice interviews reached — come back tomorrow.`,
+        error: `Daily limit of ${config.interviewDailyLimit} practice interviews reached.`,
+        retryAfterMs: rateLimiter.resetsInMs(`interviewday:${who}`, DAY_MS),
+        scope: 'interview-daily',
         beta: !!access.beta,
       });
     }

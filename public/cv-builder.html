@@ -2583,18 +2583,54 @@ function showAllowance(a){
   if(!a || typeof a.hourLeft !== "number") return;
   const el=$("aiLeft"); if(!el) return;
   const mins = a.hourResetsInMs ? Math.ceil(a.hourResetsInMs/60000) : 0;
-  el.innerHTML = a.hourLeft > 0
-    ? `<b>${a.hourLeft}</b> of ${a.hourLimit} AI uses left this hour`
-    : `No AI uses left this hour${mins?` — resets in about ${mins} min`:""}`;
+  if(a.hourLeft > 0){
+    stopCountdown(el);
+    el.innerHTML = `<b>${a.hourLeft}</b> of ${a.hourLimit} AI uses left this hour`;
+  } else {
+    startCountdown(el, "No AI uses left this hour.", a.hourResetsInMs || 0);
+  }
   el.classList.toggle("low", a.hourLeft <= 2);
   el.classList.add("show");
+}
+
+/* ---------- limit countdowns ----------
+   Every 429 from the API now carries retryAfterMs. "Please try again later"
+   tells a student nothing they can act on; a ticking figure does, and it stops
+   them hammering the button while the window is still closed. One timer per
+   element, cleared when it reaches zero. */
+const _countdowns = new Map();
+function fmtWait(ms){
+  const s = Math.max(0, Math.ceil(ms/1000));
+  if(s < 60) return s + (s===1?" second":" seconds");
+  const m = Math.floor(s/60), r = s%60;
+  if(m < 60) return m + "m " + String(r).padStart(2,"0") + "s";
+  const h = Math.floor(m/60);
+  return h + "h " + String(m%60).padStart(2,"0") + "m";
+}
+function stopCountdown(el){
+  const t = _countdowns.get(el);
+  if(t){ clearInterval(t); _countdowns.delete(el); }
+}
+function startCountdown(el, base, retryAfterMs){
+  if(!el) return;
+  stopCountdown(el);
+  if(!retryAfterMs || retryAfterMs <= 0){ el.textContent = base; return; }
+  const until = Date.now() + retryAfterMs;
+  const tick = () => {
+    const left = until - Date.now();
+    if(left <= 0){ stopCountdown(el); el.textContent = base + " You can try again now."; return; }
+    el.textContent = base + " Resets in " + fmtWait(left) + ".";
+  };
+  tick();
+  _countdowns.set(el, setInterval(tick, 1000));
 }
 
 function showAIMessage(msg, isErr){
   $("aiPanel").style.display="block";
   $("aiOutput").style.display="none";
   $("aiActions").style.display="none";
-  const m=$("aiMsg"); m.textContent=msg; m.classList.toggle("err", !!isErr);
+  const m=$("aiMsg"); m.classList.toggle("err", !!isErr);
+  startCountdown(m, msg, arguments.length > 2 ? arguments[2] : 0);
   $("aiPanel").scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 function showAIResult(text){
@@ -2738,7 +2774,7 @@ async function generateAI(){
       showUpgrade(data.checkoutUrl, licenseKey ? (data.error||"That licence key was not accepted.") : "", generateAI);
       return;
     }
-    if(resp.status===429){ showAIMessage(data.error||"Rate limit reached — please try again in an hour.", true); return; }
+    if(resp.status===429){ showAIMessage(data.error||"Rate limit reached.", true, data.retryAfterMs); return; }
     if(!resp.ok){ showAIMessage(data.error||"Generation failed — please try again in a moment.", true); return; }
     if(data.beta) $("betaBadge").classList.add("show");
     showAllowance(data.allowance);
@@ -3522,8 +3558,9 @@ function renderKeywordGap(data){
    Stateless server: the browser holds the whole transcript and sends it back
    on every turn. It autosaves with the rest of the form. */
 const IV = { transcript: [], done: false };
-function setIvMsg(msg, isErr){
-  const el=$("ivMsg"); el.textContent=msg; el.classList.toggle("err", !!isErr);
+function setIvMsg(msg, isErr, retryAfterMs){
+  const el=$("ivMsg"); el.classList.toggle("err", !!isErr);
+  startCountdown(el, msg, retryAfterMs || 0);
 }
 function ivAppend(cls, html){
   const c=$("ivChat"); c.style.display="flex";
@@ -3579,7 +3616,7 @@ async function callInterview(){
       setIvMsg("Interview practice needs the AI upgrade — subscribe (or paste your licence key) in the panel below, then press start again.", true);
       return;
     }
-    if(!resp.ok){ setIvMsg(data.error||"The interviewer lost their train of thought — please try again.", true); return; }
+    if(!resp.ok){ setIvMsg(data.error||"The interviewer lost their train of thought — please try again.", true, data.retryAfterMs); return; }
     if(data.beta) $("betaBadge").classList.add("show");
     showAllowance(data.allowance);
     const r=data.result;
