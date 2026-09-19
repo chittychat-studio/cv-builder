@@ -698,10 +698,18 @@ function createApp(options = {}) {
    * next call succeeds. Everything is null until the first AI call of this
    * process has happened: an invented number here would be worse than none.
    *
-   * `callsLeft` is the answer to "how many more requests before it fills up" --
-   * whichever of the request cap or the token cap runs out first, expressed in
-   * requests, using the measured average tokens per call so far. `boundBy` says
-   * which of the two is the binding constraint.
+   * Two figures, two windows -- Groq's request headers are per DAY and its
+   * token headers are per MINUTE, so they are reported separately and never
+   * combined. `callsLeft` (window: day) is "how many more AI uses before the
+   * free tier fills up today". `burstCallsLeft` (window: minute) is "how many
+   * right now before the throttle bites", and `resetsInMs.tokens` says how
+   * long until it clears -- seconds, not hours.
+   *
+   * CAVEAT, stated because the number looks more authoritative than it is:
+   * `tokensUsedLast24h` and `tokensLeftToday` come from an in-memory ledger,
+   * and on Vercel every serverless instance has its own. They describe this
+   * instance, not the site. The header-backed figures above are account-wide
+   * and are the ones to trust.
    */
   app.get('/api/usage', (req, res) => {
     // getAnthropic(), not the lazy `anthropic` variable: the client is only

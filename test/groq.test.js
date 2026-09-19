@@ -184,19 +184,24 @@ test('reads Groq rate-limit headers and reports calls remaining', async () => {
   assert.equal(l.requestsLeft, 940);
   assert.equal(l.tokensLeft, 6000);
   assert.equal(l.avgTokensPerCall, 1000);
-  // 6000 tokens / 1000 per call = 6 calls; 940 requests left. Tokens bind.
-  assert.equal(l.callsLeft, 6);
-  assert.equal(l.boundBy, 'tokens');
+  // The two headers are different windows: requests = per DAY, tokens = per
+  // MINUTE. So the daily figure is the request count, and the token figure is
+  // only a burst throttle. They are never compared.
+  assert.equal(l.callsLeft, 940);
+  assert.equal(l.callsLeftWindow, 'day');
+  assert.equal(l.boundBy, 'requests');
+  assert.equal(l.burstCallsLeft, 6);
+  assert.equal(l.burstWindow, 'minute');
   assert.equal(l.resetsInMs.tokens, 7660);
   assert.equal(l.resetsInMs.requests, 179500);
   assert.equal(l.observed.cachedTokens, 400);
 });
 
-test('reports requests as the binding constraint when they run out first', async () => {
+test('a nearly-empty token bucket never shrinks the daily figure', async () => {
   const client = createGroqClient('k', {
     fetchImpl: async () => ({
       ok: true,
-      headers: hdrs({ 'x-ratelimit-remaining-requests': '3', 'x-ratelimit-remaining-tokens': '7000' }),
+      headers: hdrs({ 'x-ratelimit-remaining-requests': '940', 'x-ratelimit-remaining-tokens': '150' }),
       json: async () => ({
         choices: [{ message: { content: 'x' }, finish_reason: 'stop' }],
         usage: { prompt_tokens: 90, completion_tokens: 10, total_tokens: 100 },
@@ -205,8 +210,11 @@ test('reports requests as the binding constraint when they run out first', async
   });
   await client.messages.create({ max_tokens: 10, system: 'S', messages: [] });
   const l = client.limits();
-  assert.equal(l.callsLeft, 3);
-  assert.equal(l.boundBy, 'requests');
+  // 150 tokens left in the minute bucket = 1 call's worth. That must NOT be
+  // reported as "1 use left today" -- 940 requests remain and the bucket
+  // refills within the minute.
+  assert.equal(l.callsLeft, 940);
+  assert.equal(l.burstCallsLeft, 1);
 });
 
 test('rate-limit headers are read from error responses too', async () => {
