@@ -24,8 +24,26 @@
  * requests and 200,000 tokens a day, no billing attached), so the worst case is
  * students being refused, not a bill.
  */
-const { createApp } = require('../server');
+let app;
+let bootError = null;
+try {
+  // Built lazily-but-once: if construction throws, every request would
+  // otherwise return an opaque 500 with the reason only in Vercel's logs.
+  app = require('../server').createApp();
+} catch (err) {
+  bootError = err;
+  console.error('createApp() failed at boot:', err && err.stack ? err.stack : err);
+}
 
-const app = createApp();
-
-module.exports = (req, res) => app(req, res);
+module.exports = (req, res) => {
+  if (bootError) {
+    // Status and message only — never a stack trace to the client.
+    res.statusCode = 500;
+    res.setHeader('content-type', 'application/json');
+    return res.end(JSON.stringify({
+      error: 'The server failed to start.',
+      reason: String((bootError && bootError.message) || bootError).slice(0, 200),
+    }));
+  }
+  return app(req, res);
+};
