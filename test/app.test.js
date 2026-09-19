@@ -2088,3 +2088,17 @@ test('/api/features reports the allowance so it can be shown before any AI call'
   const after = await (await fetch(`${base}/api/features`)).json();
   assert.equal(after.allowance.hourLeft, 9, 'reading it must not consume one, but using one must show');
 });
+
+test('a missing file parser disables file reading, not the whole app', async (t) => {
+  // The Vercel failure: pdf-parse v2 optionally loads @napi-rs/canvas, a native
+  // binary absent from serverless runtimes. Required at module scope it took
+  // every route down — /api/features and /api/usage included, neither of which
+  // touches a PDF.
+  const { server, base } = await startApp({ betaMode: true });
+  t.after(() => server.close());
+
+  for (const path of ['/api/features', '/api/usage']) {
+    const res = await fetch(`${base}${path}`);
+    assert.equal(res.status, 200, `${path} must not depend on a file parser`);
+  }
+});

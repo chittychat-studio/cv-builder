@@ -3,8 +3,31 @@
 const path = require('node:path');
 const express = require('express');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
+
+/**
+ * pdf-parse and mammoth are loaded ON DEMAND, not at module scope.
+ *
+ * pdf-parse v2 optionally loads @napi-rs/canvas, a native binary that is not
+ * present in a serverless runtime. Requiring it at the top took the whole app
+ * down on Vercel: every route returned 500, including /api/features and
+ * /api/usage, which never touch a PDF. A file parser failing to load should
+ * disable file parsing, not the CV builder.
+ *
+ * Fails closed with a usable message when the parser genuinely is unavailable,
+ * rather than a generic 500.
+ */
+function loadParser(name) {
+  try {
+    return require(name);
+  } catch (err) {
+    console.error(`${new Date().toISOString()} parser-unavailable ${name}: ${err && err.message}`);
+    const e = new Error(
+      'Reading files is unavailable on this server right now — paste your details into the form instead.'
+    );
+    e.status = 503;
+    throw e;
+  }
+}
 const { createGroqClient } = require('./lib/groq');
 const { createAnthropicClient, generateCV, suggestIdeas, polishEntry, extractCV, tailorToJob, diagnoseCV, keywordGapExtract, keywordGapDiff, interviewTurn, ModelRefusalError, ModelTruncatedError } = require('./lib/anthropic');
 const { createLicensing } = require('./lib/licensing');
@@ -942,8 +965,10 @@ function createApp(options = {}) {
   // Word (rejected with a clear message, since nothing here can parse OLE).
   async function extractFileText(file) {
     const name = (file.originalname || '').toLowerCase();
-    if (name.endsWith('.pdf')) return (await pdfParse(file.buffer)).text;
-    if (name.endsWith('.docx')) return (await mammoth.extractRawText({ buffer: file.buffer })).value;
+    if (name.endsWith('.pdf')) return (await loadParser('pdf-parse')(file.buffer)).text;
+    if (name.endsWith('.docx')) {
+      return (await loadParser('mammoth').extractRawText({ buffer: file.buffer })).value;
+    }
     if (file.buffer.length >= 4 && file.buffer.readUInt32BE(0) === 0xd0cf11e0) {
       const err = new Error(
         'That is an old-format binary .doc file — open it in Word and save as .docx or PDF, then upload again.'
