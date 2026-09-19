@@ -7,9 +7,15 @@
  * directly, so the same app object serves both hosts: Render runs
  * `node server.js`, Vercel invokes this handler. No fork, no second codebase.
  *
- * Only /api/* reaches here — vercel.json serves public/ from the CDN, which is
- * the whole point of the move: the page loads instantly instead of waiting on a
- * cold container.
+ * Only /api/* reaches here — vercel.json serves public/ as static assets from
+ * the CDN, which is the whole point of the move: the page loads instantly
+ * instead of waiting on a cold container.
+ *
+ * vercel.json uses the explicit builds/routes form rather than
+ * outputDirectory + rewrites. Auto-detection sees package.json's Express
+ * dependency, classifies this as a backend framework project, and then looks
+ * for a server entrypoint inside the output directory -- "No entrypoint found
+ * in output directory: public". Declaring both builds removes the guesswork.
  *
  * KNOWN LIMITATION (CLAUDE.md D14): Vercel functions are stateless between
  * invocations, so the in-memory rate limiter, the daily token ledger and the

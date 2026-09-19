@@ -175,8 +175,13 @@ about a third of a generate-cv call is cacheable — and the minimum cacheable p
 Reason for moving: Render's free instance sleeps when idle, so the first visitor
 waits ~50s for a cold start. The page is static — it should be instant.
 
-Shape: `public/` is served from Vercel's CDN (`outputDirectory: "public"`), with
-`/app` and `/privacy` rewritten to their HTML files. Only `/api/*` invokes a
+Shape: `public/` is served from Vercel's CDN, with `/app` and `/privacy` routed
+to their HTML files. `vercel.json` uses the explicit `builds`/`routes` form, not
+`outputDirectory` + `rewrites`: auto-detection sees Express in package.json,
+classifies this as a backend framework project, and then fails with "No
+entrypoint found in output directory: public". Declaring both builds
+(`@vercel/node` for `api/index.js`, `@vercel/static` for `public/**`) removes
+the guesswork. Only `/api/*` invokes a
 function (`api/index.js`), which reuses the same `createApp()` Render runs — one
 codebase, two hosts, no fork. `maxDuration` 60s (Hobby allows up to 300).
 
