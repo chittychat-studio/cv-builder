@@ -16,17 +16,30 @@ const multer = require('multer');
  * Fails closed with a usable message when the parser genuinely is unavailable,
  * rather than a generic 500.
  */
-function loadParser(name) {
-  try {
-    return require(name);
-  } catch (err) {
-    console.error(`${new Date().toISOString()} parser-unavailable ${name}: ${err && err.message}`);
-    const e = new Error(
-      'Reading files is unavailable on this server right now — paste your details into the form instead.'
-    );
-    e.status = 503;
-    throw e;
-  }
+function parserUnavailable(name, err) {
+  console.error(`${new Date().toISOString()} parser-unavailable ${name}: ${err && err.message}`);
+  const e = new Error(
+    name === 'pdf-parse'
+      ? 'PDF reading is unavailable on this server — upload a Word (.docx) file instead, or paste your details into the form.'
+      : 'Reading files is unavailable on this server right now — paste your details into the form instead.'
+  );
+  e.status = 503;
+  return e;
+}
+
+// Literal require() calls, not require(variable). Bundlers resolve dependencies
+// by static analysis, so a dynamic require is invisible to them and the package
+// never makes it into the deployed function -- which is what happened to
+// mammoth on the first attempt at this fix: a .docx upload failed not because
+// mammoth broke, but because it was not in the bundle at all.
+//
+// Still lazy: these run on first use, so pdf-parse's native @napi-rs/canvas
+// dependency is never touched unless someone actually uploads a PDF.
+function loadMammoth() {
+  try { return require('mammoth'); } catch (err) { throw parserUnavailable('mammoth', err); }
+}
+function loadPdfParse() {
+  try { return require('pdf-parse'); } catch (err) { throw parserUnavailable('pdf-parse', err); }
 }
 const { createGroqClient } = require('./lib/groq');
 const { createAnthropicClient, generateCV, suggestIdeas, polishEntry, extractCV, tailorToJob, diagnoseCV, keywordGapExtract, keywordGapDiff, interviewTurn, ModelRefusalError, ModelTruncatedError } = require('./lib/anthropic');
@@ -965,9 +978,9 @@ function createApp(options = {}) {
   // Word (rejected with a clear message, since nothing here can parse OLE).
   async function extractFileText(file) {
     const name = (file.originalname || '').toLowerCase();
-    if (name.endsWith('.pdf')) return (await loadParser('pdf-parse')(file.buffer)).text;
+    if (name.endsWith('.pdf')) return (await loadPdfParse()(file.buffer)).text;
     if (name.endsWith('.docx')) {
-      return (await loadParser('mammoth').extractRawText({ buffer: file.buffer })).value;
+      return (await loadMammoth().extractRawText({ buffer: file.buffer })).value;
     }
     if (file.buffer.length >= 4 && file.buffer.readUInt32BE(0) === 0xd0cf11e0) {
       const err = new Error(
