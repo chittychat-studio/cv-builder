@@ -170,3 +170,32 @@ on polish). The student's facts differ every call and never cache across users, 
 about a third of a generate-cv call is cacheable — and the minimum cacheable prefix is
 128–1,024 tokens depending on model, which our shorter prompts may not clear. Measure
 `usage.prompt_tokens_details.cached_tokens` before assuming any benefit.
+
+### D14 — Deploy to Vercel; Render stays as fallback until Vercel is proven (19 Sep 2026)
+Reason for moving: Render's free instance sleeps when idle, so the first visitor
+waits ~50s for a cold start. The page is static — it should be instant.
+
+Shape: `public/` is served from Vercel's CDN (`outputDirectory: "public"`), with
+`/app` and `/privacy` rewritten to their HTML files. Only `/api/*` invokes a
+function (`api/index.js`), which reuses the same `createApp()` Render runs — one
+codebase, two hosts, no fork. `maxDuration` 60s (Hobby allows up to 300).
+
+**Accepted limitation — per-visitor limits become best-effort.** Vercel functions
+are stateless between invocations, so the in-memory rate limiter (10/hour,
+100/month per IP), the 24h token ledger and the Groq rate-limit header state do
+not persist reliably. Fluid compute reuses warm instances sometimes, never
+dependably and never across concurrent ones.
+
+Accepted because the backstop is financial, not procedural: Groq's free tier caps
+at 1,000 requests and 200,000 tokens a day with **no billing attached**, so the
+worst case is students being refused, not a bill. Durable counters (Upstash Redis
+free tier) are the fix *if abuse actually appears* — not before. Same reasoning as
+rejecting a self-hosted model: do not build for a problem you do not yet have.
+
+Both deployments run from the same repo and share one Groq key, so their usage
+adds against one quota and each keeps its own separate counters. Render is kept
+only until Vercel is confirmed working, then retired.
+
+Revisit if: real abuse appears, the app gains a paid tier (Vercel Hobby is
+non-commercial — D2 would need Pro), or per-visitor limits need to be provable
+rather than best-effort.
